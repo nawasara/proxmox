@@ -151,6 +151,44 @@ class Table extends Component
     }
 
     /**
+     * Live (instant) status for the open detail modal. This is a freshly
+     * fetched snapshot from Proxmox, NOT the cached DB row — it changes
+     * every render while the detail modal is open and a poll is firing.
+     */
+    #[Computed]
+    public function detailLive(): ?array
+    {
+        $vm = $this->detail;
+        if (! $vm || ! $vm->isRunning()) {
+            return null;
+        }
+
+        try {
+            $status = app(ProxmoxClient::class)->getVmStatus(
+                $vm->node_name, (int) $vm->vmid, $vm->vm_type
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $status) {
+            return null;
+        }
+
+        $maxMem = (float) ($status['maxmem'] ?? 0);
+        $usedMem = (float) ($status['mem'] ?? 0);
+
+        return [
+            'cpu_pct' => round(((float) ($status['cpu'] ?? 0)) * 100, 2),
+            'mem_used' => (int) $usedMem,
+            'mem_total' => (int) $maxMem,
+            'mem_pct' => $maxMem > 0 ? round(($usedMem / $maxMem) * 100, 2) : null,
+            'uptime' => (int) ($status['uptime'] ?? 0),
+            'fetched_at' => now()->format('H:i:s'),
+        ];
+    }
+
+    /**
      * RRD time-series for the open detail modal — last hour, AVERAGE.
      * Returns ['cpu' => [floats], 'mem_pct' => [floats]] for sparklines.
      * Each series has the same length and is keyed in chronological order.
@@ -179,6 +217,8 @@ class Table extends Component
         $memPct = [];
         $maxCpuPct = 0.0;
         $maxMemPct = 0.0;
+        $sumCpu = 0.0;
+        $sumMem = 0.0;
 
         foreach ($rows as $row) {
             // Proxmox RRD reports cpu as 0..1 fraction
@@ -190,10 +230,12 @@ class Table extends Component
             if ($c !== null) {
                 $cpu[] = $c;
                 $maxCpuPct = max($maxCpuPct, $c);
+                $sumCpu += $c;
             }
             if ($m !== null) {
                 $memPct[] = $m;
                 $maxMemPct = max($maxMemPct, $m);
+                $sumMem += $m;
             }
         }
 
@@ -206,6 +248,8 @@ class Table extends Component
             'mem_pct' => $memPct,
             'cpu_max_pct' => $maxCpuPct,
             'mem_max_pct' => $maxMemPct,
+            'cpu_avg_pct' => count($cpu) > 0 ? round($sumCpu / count($cpu), 2) : 0,
+            'mem_avg_pct' => count($memPct) > 0 ? round($sumMem / count($memPct), 2) : 0,
             'sample_count' => count($rows),
         ];
     }

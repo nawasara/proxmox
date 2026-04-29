@@ -1,4 +1,4 @@
-<div @if ($this->hasPendingActions) wire:poll.4s @endif>
+<div @if ($this->hasPendingActions) wire:poll.4s @elseif ($detailId) wire:poll.10s @endif>
     {{-- Sync info bar --}}
     <div class="mb-3 flex items-center justify-between text-xs text-gray-500 dark:text-neutral-400">
         <div class="flex items-center gap-3">
@@ -307,25 +307,58 @@
                 @endif
             </dl>
 
-            {{-- RRD sparkline (last hour) — only for running VMs --}}
-            @php $rrd = $this->detailRrd; @endphp
-            @if ($rrd)
+            {{-- Live metrics + RRD sparkline (last hour) — only for running VMs --}}
+            @php
+                $rrd = $this->detailRrd;
+                $live = $this->detailLive;
+            @endphp
+            @if ($rrd || $live)
                 <div class="mt-5 grid grid-cols-2 gap-4">
                     <div class="px-3 py-3 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
-                        <div class="flex items-baseline justify-between mb-1">
-                            <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">CPU (last 1h)</span>
-                            <span class="text-xs font-mono text-gray-600 dark:text-neutral-300">peak {{ $rrd['cpu_max_pct'] }}%</span>
+                        <div class="flex items-baseline justify-between mb-2">
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">CPU</span>
+                                @if ($live)
+                                    <span class="text-lg font-mono font-semibold text-gray-900 dark:text-neutral-100">{{ $live['cpu_pct'] }}%</span>
+                                @endif
+                            </div>
+                            @if ($rrd)
+                                <span class="text-[11px] font-mono text-gray-500 dark:text-neutral-400" title="Peak / average over last 1h">
+                                    1h: {{ $rrd['cpu_avg_pct'] }}% avg · {{ $rrd['cpu_max_pct'] }}% peak
+                                </span>
+                            @endif
                         </div>
-                        <x-nawasara-proxmox::sparkline :points="$rrd['cpu']" color="#3b82f6" :min="0" class="w-full h-9" />
+                        @if ($rrd)
+                            <x-nawasara-proxmox::sparkline :points="$rrd['cpu']" color="#3b82f6" :min="0" class="w-full h-9" />
+                        @endif
                     </div>
                     <div class="px-3 py-3 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
-                        <div class="flex items-baseline justify-between mb-1">
-                            <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Memory (last 1h)</span>
-                            <span class="text-xs font-mono text-gray-600 dark:text-neutral-300">peak {{ $rrd['mem_max_pct'] }}%</span>
+                        <div class="flex items-baseline justify-between mb-2">
+                            <div class="flex items-baseline gap-2">
+                                <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Memory</span>
+                                @if ($live && $live['mem_pct'] !== null)
+                                    <span class="text-lg font-mono font-semibold text-gray-900 dark:text-neutral-100">{{ $live['mem_pct'] }}%</span>
+                                    <span class="text-[11px] font-mono text-gray-500 dark:text-neutral-400">
+                                        ({{ number_format($live['mem_used'] / 1024 / 1024 / 1024, 1) }}/{{ number_format($live['mem_total'] / 1024 / 1024 / 1024, 1) }} GB)
+                                    </span>
+                                @endif
+                            </div>
+                            @if ($rrd)
+                                <span class="text-[11px] font-mono text-gray-500 dark:text-neutral-400" title="Peak / average over last 1h">
+                                    1h: {{ $rrd['mem_avg_pct'] }}% avg · {{ $rrd['mem_max_pct'] }}% peak
+                                </span>
+                            @endif
                         </div>
-                        <x-nawasara-proxmox::sparkline :points="$rrd['mem_pct']" color="#8b5cf6" :min="0" :max="100" class="w-full h-9" />
+                        @if ($rrd)
+                            <x-nawasara-proxmox::sparkline :points="$rrd['mem_pct']" color="#8b5cf6" :min="0" :max="100" class="w-full h-9" />
+                        @endif
                     </div>
                 </div>
+                @if ($live)
+                    <div class="mt-1 text-[11px] text-gray-400 dark:text-neutral-500 font-mono text-right">
+                        live · updated {{ $live['fetched_at'] }}
+                    </div>
+                @endif
             @endif
 
             {{-- Live config from Proxmox API (network, disks, OS) --}}
