@@ -147,9 +147,22 @@
                         @endif
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
-                        <x-nawasara-ui::dropdown-menu-action :id="$vm->id" :items="[
-                            ['type' => 'click', 'label' => 'Detail', 'wire:click' => 'openDetail('.$vm->id.')', 'modal' => 'proxmox-vm-detail', 'icon' => 'lucide-eye', 'permission' => 'proxmox.vm.view'],
-                        ]" />
+                        @php
+                            $items = [
+                                ['type' => 'click', 'label' => 'Detail', 'wire:click' => 'openDetail('.$vm->id.')', 'modal' => 'proxmox-vm-detail', 'icon' => 'lucide-eye', 'permission' => 'proxmox.vm.view'],
+                            ];
+                            if (! $vm->template) {
+                                if ($vm->status !== 'running') {
+                                    $items[] = ['type' => 'click', 'label' => 'Start', 'wire:click' => "vmAction({$vm->id}, 'start')", 'icon' => 'lucide-play', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Start VM {$vm->name} (#{$vm->vmid})?"];
+                                }
+                                if ($vm->status === 'running') {
+                                    $items[] = ['type' => 'click', 'label' => 'Restart', 'wire:click' => "vmAction({$vm->id}, 'restart')", 'icon' => 'lucide-rotate-cw', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Reboot VM {$vm->name} (#{$vm->vmid})?\n\nGuest agent atau init container harus aktif untuk reboot graceful."];
+                                    $items[] = ['type' => 'click', 'label' => 'Shutdown', 'wire:click' => "vmAction({$vm->id}, 'shutdown')", 'icon' => 'lucide-power', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Graceful shutdown VM {$vm->name} (#{$vm->vmid})?\n\nSama seperti tekan tombol power di komputer fisik."];
+                                    $items[] = ['type' => 'click', 'label' => 'Stop (force)', 'wire:click' => "vmAction({$vm->id}, 'stop')", 'icon' => 'lucide-square', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "FORCE STOP VM {$vm->name} (#{$vm->vmid})?\n\nIni akan memutus power tanpa shutdown graceful — data yg belum di-flush bisa hilang. Pakai opsi Shutdown jika memungkinkan."];
+                                }
+                            }
+                        @endphp
+                        <x-nawasara-ui::dropdown-menu-action :id="$vm->id" :items="$items" />
                     </td>
                 </tr>
             @empty

@@ -93,6 +93,39 @@ class Table extends Component
         $this->toastSuccess('Sync dispatched. Data akan refresh dalam beberapa detik.');
     }
 
+    /**
+     * Dispatch a lifecycle action against a VM.
+     *
+     * @param  string  $action  one of: start, stop, shutdown, restart
+     */
+    public function vmAction(int $id, string $action): void
+    {
+        Gate::authorize('proxmox.vm.lifecycle');
+
+        $vm = ProxmoxVm::find($id);
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        $repo = $this->repo();
+
+        try {
+            $job = match ($action) {
+                'start' => $repo->start($vm),
+                'stop' => $repo->stop($vm),
+                'shutdown' => $repo->shutdown($vm),
+                'restart' => $repo->restart($vm),
+                default => throw new \InvalidArgumentException("Unsupported action: {$action}"),
+            };
+        } catch (\Throwable $e) {
+            $this->toastError('Gagal dispatch action: '.$e->getMessage());
+            return;
+        }
+
+        $this->toastSuccess(ucfirst($action)." VM #{$vm->vmid} ({$vm->name}) telah dijadwalkan.");
+    }
+
     public function openDetail(int $id): void
     {
         $this->detailId = $id;

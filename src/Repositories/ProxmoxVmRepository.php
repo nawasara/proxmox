@@ -7,6 +7,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
+use Nawasara\Proxmox\Jobs\Vm\RestartProxmoxVmJob;
+use Nawasara\Proxmox\Jobs\Vm\ShutdownProxmoxVmJob;
+use Nawasara\Proxmox\Jobs\Vm\StartProxmoxVmJob;
+use Nawasara\Proxmox\Jobs\Vm\StopProxmoxVmJob;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Sync\Concerns\TracksLastSync;
 use Nawasara\Sync\Contracts\SyncedRepository;
@@ -41,13 +45,63 @@ class ProxmoxVmRepository implements SyncedRepository
 
     public function update(string|int $id, array $data): ?SyncJob
     {
-        // Lifecycle ops (start/stop/restart) ditambah di Day 3 sebagai mutation jobs
-        throw new \BadMethodCallException('Pakai mutation job spesifik (start/stop/restart) ditambah di Day 3.');
+        throw new \BadMethodCallException('Use specific lifecycle methods: start/stop/shutdown/restart.');
     }
 
     public function delete(string|int $id): ?SyncJob
     {
-        throw new \BadMethodCallException('Termination VM ditambah di Day 3 sebagai mutation job.');
+        throw new \BadMethodCallException('VM destroy is not supported from Nawasara — perform in Proxmox UI.');
+    }
+
+    /**
+     * Hard power-on. Returns the SyncJob tracker row.
+     */
+    public function start(ProxmoxVm $vm): ?SyncJob
+    {
+        return $this->dispatchVmJob(StartProxmoxVmJob::class, $vm);
+    }
+
+    /**
+     * Hard stop (cuts power, no graceful shutdown).
+     */
+    public function stop(ProxmoxVm $vm): ?SyncJob
+    {
+        return $this->dispatchVmJob(StopProxmoxVmJob::class, $vm);
+    }
+
+    /**
+     * Graceful shutdown — needs guest agent (qemu) or container init (lxc).
+     */
+    public function shutdown(ProxmoxVm $vm): ?SyncJob
+    {
+        return $this->dispatchVmJob(ShutdownProxmoxVmJob::class, $vm);
+    }
+
+    /**
+     * Graceful reboot.
+     */
+    public function restart(ProxmoxVm $vm): ?SyncJob
+    {
+        return $this->dispatchVmJob(RestartProxmoxVmJob::class, $vm);
+    }
+
+    protected function dispatchVmJob(string $jobClass, ProxmoxVm $vm): ?SyncJob
+    {
+        $payload = [
+            'node' => $vm->node_name,
+            'vmid' => $vm->vmid,
+            'vm_type' => $vm->vm_type,
+            'name' => $vm->name,
+        ];
+
+        $jobClass::dispatch(payload: $payload, triggerSource: 'manual');
+
+        return SyncJob::query()
+            ->where('service', 'proxmox')
+            ->where('target_type', 'ProxmoxVm')
+            ->where('target_id', $vm->vm_type.':'.$vm->vmid)
+            ->latest('id')
+            ->first();
     }
 
     public function syncNow(): ?SyncJob

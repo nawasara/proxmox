@@ -111,6 +111,64 @@ class ProxmoxClient
     }
 
     /**
+     * POST /nodes/{node}/{type}/{vmid}/status/{action}.
+     *
+     * Valid actions: start, stop, shutdown, reset, suspend, resume.
+     * Returns the UPID task id on success, null on failure.
+     */
+    public function vmAction(string $node, int $vmid, string $action, string $type = 'qemu', array $params = []): ?string
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $action = strtolower($action);
+
+        $allowed = ['start', 'stop', 'shutdown', 'reset', 'suspend', 'resume', 'reboot'];
+        if (! in_array($action, $allowed, true)) {
+            throw new \InvalidArgumentException("Unsupported VM action: {$action}");
+        }
+
+        $r = $this->api()->post("/nodes/{$node}/{$type}/{$vmid}/status/{$action}", $params);
+
+        if (! $r->successful()) {
+            throw new \RuntimeException("Proxmox action {$action} failed: HTTP ".$r->status().' '.$r->body());
+        }
+
+        return $r->json('data');
+    }
+
+    /**
+     * GET /nodes/{node}/tasks/{upid}/status — poll task progress.
+     *
+     * Returns { status: 'running'|'stopped', exitstatus: 'OK'|... }.
+     */
+    public function getTaskStatus(string $node, string $upid): ?array
+    {
+        $r = $this->api()->get("/nodes/{$node}/tasks/".urlencode($upid).'/status');
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * Wait for an async task to finish, polling every $intervalSeconds.
+     *
+     * Returns the final task status array, or null on timeout.
+     */
+    public function waitForTask(string $node, string $upid, int $timeoutSeconds = 60, int $intervalSeconds = 2): ?array
+    {
+        $deadline = time() + $timeoutSeconds;
+
+        while (time() < $deadline) {
+            $status = $this->getTaskStatus($node, $upid);
+
+            if ($status && ($status['status'] ?? null) === 'stopped') {
+                return $status;
+            }
+
+            sleep(max(1, $intervalSeconds));
+        }
+
+        return null;
+    }
+
+    /**
      * Cluster-wide version + node list. Lightweight — used as the smoke
      * check by Vault's "Test Connection" button.
      *
