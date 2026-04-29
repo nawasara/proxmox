@@ -170,6 +170,9 @@
                                     $items[] = ['type' => 'click', 'label' => 'Restart', 'wire:click' => "vmAction({$vm->id}, 'restart')", 'icon' => 'lucide-rotate-cw', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Reboot VM {$vm->name} (#{$vm->vmid})?\n\nGuest agent atau init container harus aktif untuk reboot graceful."];
                                     $items[] = ['type' => 'click', 'label' => 'Shutdown', 'wire:click' => "vmAction({$vm->id}, 'shutdown')", 'icon' => 'lucide-power', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Graceful shutdown VM {$vm->name} (#{$vm->vmid})?\n\nSama seperti tekan tombol power di komputer fisik."];
                                     $items[] = ['type' => 'click', 'label' => 'Stop (force)', 'wire:click' => "vmAction({$vm->id}, 'stop')", 'icon' => 'lucide-square', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "FORCE STOP VM {$vm->name} (#{$vm->vmid})?\n\nIni akan memutus power tanpa shutdown graceful — data yg belum di-flush bisa hilang. Pakai opsi Shutdown jika memungkinkan."];
+                                    if (! empty($this->consoleUrls[$vm->id])) {
+                                        $items[] = ['type' => 'href', 'label' => 'Buka Console', 'href' => $this->consoleUrls[$vm->id], 'target' => '_blank', 'icon' => 'lucide-terminal', 'permission' => 'proxmox.vm.console'];
+                                    }
                                 }
                                 if ($lc) {
                                     $items[] = ['type' => 'click', 'label' => 'Lihat Log', 'wire:click' => "openLog({$vm->id})", 'modal' => 'proxmox-vm-log', 'icon' => 'lucide-scroll-text', 'permission' => 'proxmox.vm.view'];
@@ -302,11 +305,63 @@
                         </dd>
                     </div>
                 @endif
-
-                <div class="col-span-2 mt-2 pt-3 border-t border-gray-200 dark:border-neutral-700 text-xs text-gray-500 dark:text-neutral-400">
-                    Last synced: {{ $v->last_synced_at?->diffForHumans() ?? '—' }}
-                </div>
             </dl>
+
+            {{-- Live config from Proxmox API (network, disks, OS) --}}
+            @php $cfg = $this->detailConfig; @endphp
+            @if ($cfg)
+                @if (! empty($cfg['networks']))
+                    <div class="mt-5">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400 mb-2">Network Interfaces</h4>
+                        <div class="space-y-2">
+                            @foreach ($cfg['networks'] as $net)
+                                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs px-3 py-2 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
+                                    <span class="font-mono font-semibold text-gray-700 dark:text-neutral-200">{{ $net['id'] }}</span>
+                                    @foreach ($net['parts'] as $k => $val)
+                                        <span><span class="text-gray-500 dark:text-neutral-500">{{ $k }}:</span> <span class="font-mono text-gray-700 dark:text-neutral-300">{{ $val }}</span></span>
+                                    @endforeach
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                @if (! empty($cfg['disks']))
+                    <div class="mt-4">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400 mb-2">Disks</h4>
+                        <div class="space-y-1">
+                            @foreach ($cfg['disks'] as $disk)
+                                <div class="flex items-baseline gap-3 text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
+                                    <span class="font-mono font-semibold text-gray-700 dark:text-neutral-200 shrink-0">{{ $disk['id'] }}</span>
+                                    <span class="font-mono text-gray-600 dark:text-neutral-400 truncate" title="{{ $disk['raw'] }}">{{ $disk['raw'] }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                @if (! empty($cfg['description']))
+                    <div class="mt-4">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400 mb-1">Description</h4>
+                        <p class="text-sm text-gray-700 dark:text-neutral-300 whitespace-pre-wrap">{{ $cfg['description'] }}</p>
+                    </div>
+                @endif
+
+                @if (! empty($cfg['os_type']) || ! empty($cfg['boot']))
+                    <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                        @if (! empty($cfg['os_type']))
+                            <span><span class="text-gray-500 dark:text-neutral-500">OS type:</span> <span class="font-mono text-gray-700 dark:text-neutral-300">{{ $cfg['os_type'] }}</span></span>
+                        @endif
+                        @if (! empty($cfg['boot']))
+                            <span><span class="text-gray-500 dark:text-neutral-500">Boot:</span> <span class="font-mono text-gray-700 dark:text-neutral-300">{{ $cfg['boot'] }}</span></span>
+                        @endif
+                    </div>
+                @endif
+            @endif
+
+            <div class="mt-4 pt-3 border-t border-gray-200 dark:border-neutral-700 text-xs text-gray-500 dark:text-neutral-400">
+                Last synced: {{ $v->last_synced_at?->diffForHumans() ?? '—' }}
+            </div>
         @endif
         <x-slot:footer>
             <x-nawasara-ui::button color="neutral" variant="outline" wire:click="closeDetail">Tutup</x-nawasara-ui::button>

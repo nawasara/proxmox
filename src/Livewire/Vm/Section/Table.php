@@ -151,6 +151,76 @@ class Table extends Component
     }
 
     /**
+     * Live config from Proxmox API for the currently open detail modal.
+     * Returns ['raw' => array, 'networks' => array, 'disks' => array] —
+     * extracted so the view doesn't need to grok Proxmox naming conventions.
+     */
+    #[Computed]
+    public function detailConfig(): ?array
+    {
+        $vm = $this->detail;
+        if (! $vm) {
+            return null;
+        }
+
+        try {
+            $raw = app(ProxmoxClient::class)->getVmConfig($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $raw) {
+            return null;
+        }
+
+        $networks = [];
+        $disks = [];
+
+        foreach ($raw as $key => $value) {
+            // Network interfaces: net0, net1, ... (qemu) and net0 (lxc)
+            if (preg_match('/^net(\d+)$/', $key, $m)) {
+                $parts = [];
+                foreach (explode(',', (string) $value) as $segment) {
+                    if (str_contains($segment, '=')) {
+                        [$k, $v] = explode('=', $segment, 2);
+                        $parts[$k] = $v;
+                    }
+                }
+                $networks[] = ['id' => $key, 'parts' => $parts, 'raw' => $value];
+            }
+
+            // Disks: scsi0, ide0, virtio0, sata0 (qemu) or rootfs/mp0 (lxc)
+            if (preg_match('/^(scsi|ide|virtio|sata|rootfs|mp)\d*$/', $key)) {
+                $disks[] = ['id' => $key, 'raw' => (string) $value];
+            }
+        }
+
+        return [
+            'raw' => $raw,
+            'networks' => $networks,
+            'disks' => $disks,
+            'os_type' => $raw['ostype'] ?? null,
+            'boot' => $raw['boot'] ?? null,
+            'description' => $raw['description'] ?? null,
+        ];
+    }
+
+    /**
+     * Pre-built console URLs per row, so the dropdown can open them as a
+     * normal link (target=_blank). Computed once per render.
+     */
+    #[Computed]
+    public function consoleUrls(): array
+    {
+        $client = app(ProxmoxClient::class);
+        $out = [];
+        foreach ($this->vms as $vm) {
+            $out[$vm->id] = $client->consoleUrl($vm->node_name, (int) $vm->vmid, $vm->vm_type, $vm->name);
+        }
+        return $out;
+    }
+
+    /**
      * Map of vm.id → latest lifecycle SyncJob row, for in-progress / failed
      * indicators in the table. We compute it once per render so each row
      * gets its tracker without N+1 queries.

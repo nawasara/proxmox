@@ -139,6 +139,38 @@ class ProxmoxClient
     }
 
     /**
+     * Build a deep link into the Proxmox web UI's noVNC console for a VM.
+     *
+     * Proxmox issues vncproxy tickets bound to a session cookie, so a token
+     * issued via API can't be injected into a separate browser. The pragmatic
+     * UX: just open the existing PVE web console in a new tab — admins are
+     * already authenticated there with their own credentials.
+     *
+     * Format: {host}/?console=kvm&novnc=1&node={n}&vmid={id}&resize=scale
+     * For LXC the console kind is `lxc` instead of `kvm`.
+     */
+    public function consoleUrl(string $node, int $vmid, string $type = 'qemu', ?string $vmName = null): ?string
+    {
+        $host = (string) Vault::get('proxmox', 'host');
+        if (! $host) {
+            return null;
+        }
+
+        $kind = $type === 'lxc' ? 'lxc' : 'kvm';
+        $params = http_build_query([
+            'console' => $kind,
+            'novnc' => 1,
+            'vmid' => $vmid,
+            'node' => $node,
+            'resize' => 'scale',
+            'cmd' => '',
+            'vmname' => $vmName ?? '',
+        ]);
+
+        return rtrim($host, '/').'/?'.$params;
+    }
+
+    /**
      * GET /nodes/{node}/tasks/{upid}/status — poll task progress.
      *
      * Returns { status: 'running'|'stopped', exitstatus: 'OK'|... }.
