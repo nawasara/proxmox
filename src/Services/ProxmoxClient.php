@@ -51,6 +51,66 @@ class ProxmoxClient
     }
 
     /**
+     * GET /api2/json/version → cluster version info.
+     */
+    public function getVersion(): ?array
+    {
+        $r = $this->api()->get('/version');
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * GET /api2/json/nodes → cluster-wide node list with resource summary.
+     *
+     * Each entry: { node, status, cpu, maxcpu, mem, maxmem, disk, maxdisk, uptime, ... }
+     */
+    public function getNodes(): array
+    {
+        $r = $this->api()->get('/nodes');
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
+    /**
+     * GET /api2/json/cluster/resources?type=vm → list semua VM (qemu) +
+     * container (lxc) di cluster sekaligus, beserta node_name + status +
+     * resource. Ini one-shot sync, jauh lebih efisien daripada loop per-node.
+     */
+    public function getClusterVms(): array
+    {
+        $r = $this->api()->get('/cluster/resources', ['type' => 'vm']);
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
+    /**
+     * GET single node detail (CPU model, OS, kernel, dst).
+     */
+    public function getNodeStatus(string $node): ?array
+    {
+        $r = $this->api()->get('/nodes/'.urlencode($node).'/status');
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * GET VM/container current status (lebih lengkap dari cluster resources).
+     */
+    public function getVmStatus(string $node, int $vmid, string $type = 'qemu'): ?array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->get("/nodes/{$node}/{$type}/{$vmid}/status/current");
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * GET VM/container config (vCPU, memory, disk, network, dst).
+     */
+    public function getVmConfig(string $node, int $vmid, string $type = 'qemu'): ?array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->get("/nodes/{$node}/{$type}/{$vmid}/config");
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
      * Cluster-wide version + node list. Lightweight — used as the smoke
      * check by Vault's "Test Connection" button.
      *
