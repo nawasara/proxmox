@@ -413,6 +413,101 @@
                 @endif
             @endif
 
+            {{-- Snapshots --}}
+            @if (! $v->template && auth()->user()?->can('proxmox.vm.snapshot'))
+                @php $snapshots = $this->detailSnapshots; @endphp
+                <div class="mt-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                            Snapshots ({{ count($snapshots) }})
+                        </h4>
+                        <x-nawasara-ui::button color="neutral" variant="outline" size="sm" wire:click="toggleSnapForm">
+                            <x-slot:icon>
+                                <x-lucide-camera class="size-3" />
+                            </x-slot:icon>
+                            {{ $showSnapForm ? 'Batal' : 'Buat Snapshot' }}
+                        </x-nawasara-ui::button>
+                    </div>
+
+                    @if ($showSnapForm)
+                        <div class="px-3 py-3 mb-3 rounded border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-900/10 space-y-2">
+                            <div>
+                                <label class="block text-xs text-gray-600 dark:text-neutral-300 mb-1">Nama (huruf, angka, underscore — tanpa spasi)</label>
+                                <input type="text" wire:model="snapName" class="w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-neutral-100 font-mono" placeholder="pre_upgrade_2026_04" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-600 dark:text-neutral-300 mb-1">Deskripsi (opsional)</label>
+                                <input type="text" wire:model="snapDescription" class="w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-gray-900 dark:text-neutral-100" placeholder="Sebelum upgrade kernel" />
+                            </div>
+                            @if ($v->vm_type === 'qemu' && $v->isRunning())
+                                <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-neutral-300">
+                                    <input type="checkbox" wire:model="snapIncludeRam" class="rounded border-gray-300 dark:border-neutral-600" />
+                                    Include RAM (vmstate) — rollback akan restore VM ke state running
+                                </label>
+                            @endif
+                            <div class="flex justify-end pt-1">
+                                <x-nawasara-ui::button color="primary" size="sm" wire:click="createSnapshot" wire:loading.attr="disabled" wire:target="createSnapshot">
+                                    <span wire:loading.remove wire:target="createSnapshot">Buat Snapshot</span>
+                                    <span wire:loading wire:target="createSnapshot">Memproses…</span>
+                                </x-nawasara-ui::button>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if (empty($snapshots))
+                        <div class="px-3 py-4 text-center text-xs text-gray-500 dark:text-neutral-400 border border-dashed border-gray-200 dark:border-neutral-700 rounded">
+                            Belum ada snapshot.
+                        </div>
+                    @else
+                        <div class="space-y-1.5">
+                            @foreach ($snapshots as $snap)
+                                @php
+                                    $when = ! empty($snap['snaptime']) ? \Carbon\Carbon::createFromTimestamp((int) $snap['snaptime']) : null;
+                                    $hasRam = ! empty($snap['vmstate']);
+                                @endphp
+                                <div class="flex items-start justify-between gap-3 px-3 py-2 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-mono text-sm font-semibold text-gray-800 dark:text-neutral-200 truncate">{{ $snap['name'] }}</span>
+                                            @if ($hasRam)
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 uppercase">RAM</span>
+                                            @endif
+                                            @if (! empty($snap['parent']))
+                                                <span class="text-[11px] text-gray-400 dark:text-neutral-500">parent: <span class="font-mono">{{ $snap['parent'] }}</span></span>
+                                            @endif
+                                        </div>
+                                        @if (! empty($snap['description']))
+                                            <p class="text-xs text-gray-600 dark:text-neutral-400 mt-0.5 truncate" title="{{ $snap['description'] }}">{{ $snap['description'] }}</p>
+                                        @endif
+                                        @if ($when)
+                                            <p class="text-[11px] text-gray-500 dark:text-neutral-500 mt-0.5">
+                                                {{ $when->format('Y-m-d H:i') }} · {{ $when->diffForHumans() }}
+                                            </p>
+                                        @endif
+                                    </div>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button type="button"
+                                            wire:click="rollbackSnapshot('{{ $snap['name'] }}')"
+                                            wire:confirm="Rollback VM ke snapshot '{{ $snap['name'] }}'?&#10;&#10;Semua perubahan setelah snapshot ini akan HILANG."
+                                            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-yellow-700 hover:bg-yellow-100 dark:text-yellow-400 dark:hover:bg-yellow-900/20"
+                                            title="Rollback ke snapshot ini">
+                                            <x-lucide-rotate-ccw class="size-3" /> Rollback
+                                        </button>
+                                        <button type="button"
+                                            wire:click="deleteSnapshot('{{ $snap['name'] }}')"
+                                            wire:confirm="Hapus snapshot '{{ $snap['name'] }}'? Tidak bisa di-undo."
+                                            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-red-600 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/20"
+                                            title="Hapus snapshot">
+                                            <x-lucide-trash-2 class="size-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            @endif
+
             <div class="mt-4 pt-3 border-t border-gray-200 dark:border-neutral-700 text-xs text-gray-500 dark:text-neutral-400">
                 Last synced: {{ $v->last_synced_at?->diffForHumans() ?? '—' }}
             </div>

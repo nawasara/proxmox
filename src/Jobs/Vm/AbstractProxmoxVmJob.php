@@ -104,6 +104,30 @@ abstract class AbstractProxmoxVmJob extends AbstractSyncJob
     }
 
     /**
+     * Wait for a Proxmox UPID task to finish and assert exitstatus=OK.
+     * Used by snapshot jobs whose call site already produced the UPID.
+     */
+    protected function waitForTaskOrFail(string $upid, int $timeoutSeconds = 300): array
+    {
+        $client = $this->client();
+        $node = $this->node();
+
+        $taskStatus = $client->waitForTask($node, $upid, timeoutSeconds: $timeoutSeconds, intervalSeconds: 2);
+
+        if ($taskStatus === null) {
+            throw new \RuntimeException("Proxmox task {$upid} did not finish within {$timeoutSeconds}s");
+        }
+
+        if (($taskStatus['exitstatus'] ?? null) !== 'OK') {
+            throw new \RuntimeException(
+                "Proxmox task {$upid} finished with exit status: ".($taskStatus['exitstatus'] ?? 'unknown')
+            );
+        }
+
+        return $taskStatus;
+    }
+
+    /**
      * Convenience: most recent SyncJob row for this exact VM target. Used by
      * the UI to look up the current/last lifecycle action and tail its log.
      */
@@ -113,7 +137,7 @@ abstract class AbstractProxmoxVmJob extends AbstractSyncJob
             ->where('service', 'proxmox')
             ->where('target_type', 'ProxmoxVm')
             ->where('target_id', $vmType.':'.$vmid)
-            ->whereIn('action', ['vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart'])
+            ->whereIn('action', ['vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart', 'snapshot_create', 'snapshot_rollback', 'snapshot_delete'])
             ->latest('id')
             ->first();
     }

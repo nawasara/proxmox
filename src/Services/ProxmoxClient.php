@@ -182,6 +182,79 @@ class ProxmoxClient
     }
 
     /**
+     * GET /nodes/{node}/{type}/{vmid}/snapshot — list snapshots for a VM.
+     *
+     * Each entry: { name, description, snaptime, parent, vmstate, ... }
+     * Always includes a synthetic "current" entry (the live state).
+     */
+    public function getSnapshots(string $node, int $vmid, string $type = 'qemu'): array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->get("/nodes/{$node}/{$type}/{$vmid}/snapshot");
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
+    /**
+     * POST /nodes/{node}/{type}/{vmid}/snapshot — create snapshot.
+     *
+     * $params: snapname (required), description, vmstate (qemu only:
+     * include RAM contents — bigger, slower, but rollback restores running state)
+     *
+     * Returns UPID task id.
+     */
+    public function createSnapshot(string $node, int $vmid, string $snapName, string $type = 'qemu', array $params = []): ?string
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $params['snapname'] = $snapName;
+
+        $r = $this->api()->asForm()->post("/nodes/{$node}/{$type}/{$vmid}/snapshot", $params);
+
+        if (! $r->successful()) {
+            throw new \RuntimeException('Proxmox createSnapshot failed: HTTP '.$r->status().' '.$r->body());
+        }
+
+        return $r->json('data');
+    }
+
+    /**
+     * POST /nodes/{node}/{type}/{vmid}/snapshot/{snapname}/rollback.
+     *
+     * Returns UPID task id.
+     */
+    public function rollbackSnapshot(string $node, int $vmid, string $snapName, string $type = 'qemu'): ?string
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->asForm()->post(
+            "/nodes/{$node}/{$type}/{$vmid}/snapshot/".rawurlencode($snapName).'/rollback'
+        );
+
+        if (! $r->successful()) {
+            throw new \RuntimeException('Proxmox rollbackSnapshot failed: HTTP '.$r->status().' '.$r->body());
+        }
+
+        return $r->json('data');
+    }
+
+    /**
+     * DELETE /nodes/{node}/{type}/{vmid}/snapshot/{snapname}.
+     *
+     * Returns UPID task id.
+     */
+    public function deleteSnapshot(string $node, int $vmid, string $snapName, string $type = 'qemu'): ?string
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->delete(
+            "/nodes/{$node}/{$type}/{$vmid}/snapshot/".rawurlencode($snapName)
+        );
+
+        if (! $r->successful()) {
+            throw new \RuntimeException('Proxmox deleteSnapshot failed: HTTP '.$r->status().' '.$r->body());
+        }
+
+        return $r->json('data');
+    }
+
+    /**
      * GET RRD data for a VM (time-series CPU/mem/disk/net).
      *
      * Each entry: { time: int, cpu: float, mem: int, maxmem: int,

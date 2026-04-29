@@ -7,7 +7,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
+use Nawasara\Proxmox\Jobs\Vm\CreateSnapshotJob;
+use Nawasara\Proxmox\Jobs\Vm\DeleteSnapshotJob;
 use Nawasara\Proxmox\Jobs\Vm\RestartProxmoxVmJob;
+use Nawasara\Proxmox\Jobs\Vm\RollbackSnapshotJob;
 use Nawasara\Proxmox\Jobs\Vm\ShutdownProxmoxVmJob;
 use Nawasara\Proxmox\Jobs\Vm\StartProxmoxVmJob;
 use Nawasara\Proxmox\Jobs\Vm\StopProxmoxVmJob;
@@ -85,14 +88,37 @@ class ProxmoxVmRepository implements SyncedRepository
         return $this->dispatchVmJob(RestartProxmoxVmJob::class, $vm);
     }
 
-    protected function dispatchVmJob(string $jobClass, ProxmoxVm $vm): ?SyncJob
+    public function createSnapshot(ProxmoxVm $vm, string $snapName, string $description = '', bool $includeRam = false): ?SyncJob
     {
-        $payload = [
+        return $this->dispatchVmJob(CreateSnapshotJob::class, $vm, [
+            'snap_name' => $snapName,
+            'description' => $description,
+            'vmstate' => $includeRam,
+        ]);
+    }
+
+    public function rollbackSnapshot(ProxmoxVm $vm, string $snapName): ?SyncJob
+    {
+        return $this->dispatchVmJob(RollbackSnapshotJob::class, $vm, [
+            'snap_name' => $snapName,
+        ]);
+    }
+
+    public function deleteSnapshot(ProxmoxVm $vm, string $snapName): ?SyncJob
+    {
+        return $this->dispatchVmJob(DeleteSnapshotJob::class, $vm, [
+            'snap_name' => $snapName,
+        ]);
+    }
+
+    protected function dispatchVmJob(string $jobClass, ProxmoxVm $vm, array $extraPayload = []): ?SyncJob
+    {
+        $payload = array_merge([
             'node' => $vm->node_name,
             'vmid' => $vm->vmid,
             'vm_type' => $vm->vm_type,
             'name' => $vm->name,
-        ];
+        ], $extraPayload);
 
         $jobClass::dispatch(payload: $payload, triggerSource: 'manual');
 

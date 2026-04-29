@@ -40,6 +40,12 @@ class Table extends Component
     // Log modal
     public ?int $logSyncJobId = null;
 
+    // Snapshot create form
+    public string $snapName = '';
+    public string $snapDescription = '';
+    public bool $snapIncludeRam = false;
+    public bool $showSnapForm = false;
+
     public function updatedSearch(): void { $this->resetPage(); }
     public function updatedNodeFilter(): void { $this->resetPage(); }
     public function updatedStatusFilter(): void { $this->resetPage(); }
@@ -135,13 +141,129 @@ class Table extends Component
     public function openDetail(int $id): void
     {
         $this->detailId = $id;
+        $this->showSnapForm = false;
+        $this->resetSnapForm();
         $this->dispatch('modal-open:proxmox-vm-detail');
     }
 
     public function closeDetail(): void
     {
         $this->detailId = null;
+        $this->showSnapForm = false;
+        $this->resetSnapForm();
         $this->dispatch('modal-close:proxmox-vm-detail');
+    }
+
+    protected function resetSnapForm(): void
+    {
+        $this->snapName = '';
+        $this->snapDescription = '';
+        $this->snapIncludeRam = false;
+    }
+
+    public function toggleSnapForm(): void
+    {
+        $this->showSnapForm = ! $this->showSnapForm;
+        if (! $this->showSnapForm) {
+            $this->resetSnapForm();
+        }
+    }
+
+    public function createSnapshot(): void
+    {
+        Gate::authorize('proxmox.vm.snapshot');
+
+        $vm = $this->detail;
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        $name = trim($this->snapName);
+        if (! preg_match('/^[A-Za-z][A-Za-z0-9_]{1,39}$/', $name)) {
+            $this->toastError('Nama snapshot harus 2–40 karakter, mulai huruf, hanya alfanumerik / underscore.');
+            return;
+        }
+
+        try {
+            $this->repo()->createSnapshot($vm, $name, trim($this->snapDescription), $this->snapIncludeRam);
+        } catch (\Throwable $e) {
+            $this->toastError('Gagal dispatch snapshot: '.$e->getMessage());
+            return;
+        }
+
+        $this->toastSuccess("Snapshot '{$name}' sedang dibuat untuk VM #{$vm->vmid}.");
+        $this->showSnapForm = false;
+        $this->resetSnapForm();
+        unset($this->detailSnapshots);
+    }
+
+    public function rollbackSnapshot(string $snapName): void
+    {
+        Gate::authorize('proxmox.vm.snapshot');
+
+        $vm = $this->detail;
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        try {
+            $this->repo()->rollbackSnapshot($vm, $snapName);
+        } catch (\Throwable $e) {
+            $this->toastError('Gagal rollback: '.$e->getMessage());
+            return;
+        }
+
+        $this->toastSuccess("Rollback ke snapshot '{$snapName}' sedang berjalan.");
+    }
+
+    public function deleteSnapshot(string $snapName): void
+    {
+        Gate::authorize('proxmox.vm.snapshot');
+
+        $vm = $this->detail;
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        try {
+            $this->repo()->deleteSnapshot($vm, $snapName);
+        } catch (\Throwable $e) {
+            $this->toastError('Gagal hapus snapshot: '.$e->getMessage());
+            return;
+        }
+
+        $this->toastSuccess("Snapshot '{$snapName}' sedang dihapus.");
+        unset($this->detailSnapshots);
+    }
+
+    /**
+     * Snapshot list for the open detail modal. Filters out the synthetic
+     * "current" entry that Proxmox always returns at the end.
+     */
+    #[Computed]
+    public function detailSnapshots(): array
+    {
+        $vm = $this->detail;
+        if (! $vm) {
+            return [];
+        }
+
+        try {
+            $rows = app(ProxmoxClient::class)->getSnapshots(
+                $vm->node_name, (int) $vm->vmid, $vm->vm_type
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        // Sort newest first; drop "current"
+        $rows = array_filter($rows, fn ($r) => ($r['name'] ?? '') !== 'current');
+        usort($rows, fn ($a, $b) => ($b['snaptime'] ?? 0) <=> ($a['snaptime'] ?? 0));
+
+        return array_values($rows);
     }
 
     #[Computed]
