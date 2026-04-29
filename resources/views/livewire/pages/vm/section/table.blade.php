@@ -1,4 +1,4 @@
-<div>
+<div @if ($this->hasPendingActions) wire:poll.4s @endif>
     {{-- Sync info bar --}}
     <div class="mb-3 flex items-center justify-between text-xs text-gray-500 dark:text-neutral-400">
         <div class="flex items-center gap-3">
@@ -94,7 +94,18 @@
                         {{ $vm->node_name }}
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm">
-                        @if ($vm->status === 'running')
+                        @php $lc = $this->lifecycleJobs[$vm->id] ?? null; @endphp
+                        @if ($lc && in_array($lc->status, ['queued', 'running']))
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                <x-lucide-loader-circle class="size-3 animate-spin" />
+                                {{ ucfirst(str_replace('vm_', '', $lc->action)) }}…
+                            </span>
+                        @elseif ($lc && $lc->status === 'failed' && $lc->finished_at?->gt(now()->subMinutes(5)))
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400" title="{{ $lc->error }}">
+                                <x-lucide-circle-alert class="size-3" />
+                                {{ ucfirst(str_replace('vm_', '', $lc->action)) }} failed
+                            </span>
+                        @elseif ($vm->status === 'running')
                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                                 <span class="size-1.5 rounded-full bg-green-500"></span> Running
                             </span>
@@ -107,7 +118,7 @@
                                 Paused
                             </span>
                         @else
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400">
                                 {{ ucfirst($vm->status ?? 'unknown') }}
                             </span>
                         @endif
@@ -159,6 +170,9 @@
                                     $items[] = ['type' => 'click', 'label' => 'Restart', 'wire:click' => "vmAction({$vm->id}, 'restart')", 'icon' => 'lucide-rotate-cw', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Reboot VM {$vm->name} (#{$vm->vmid})?\n\nGuest agent atau init container harus aktif untuk reboot graceful."];
                                     $items[] = ['type' => 'click', 'label' => 'Shutdown', 'wire:click' => "vmAction({$vm->id}, 'shutdown')", 'icon' => 'lucide-power', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Graceful shutdown VM {$vm->name} (#{$vm->vmid})?\n\nSama seperti tekan tombol power di komputer fisik."];
                                     $items[] = ['type' => 'click', 'label' => 'Stop (force)', 'wire:click' => "vmAction({$vm->id}, 'stop')", 'icon' => 'lucide-square', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "FORCE STOP VM {$vm->name} (#{$vm->vmid})?\n\nIni akan memutus power tanpa shutdown graceful — data yg belum di-flush bisa hilang. Pakai opsi Shutdown jika memungkinkan."];
+                                }
+                                if ($lc) {
+                                    $items[] = ['type' => 'click', 'label' => 'Lihat Log', 'wire:click' => "openLog({$vm->id})", 'modal' => 'proxmox-vm-log', 'icon' => 'lucide-scroll-text', 'permission' => 'proxmox.vm.view'];
                                 }
                             }
                         @endphp
@@ -296,6 +310,63 @@
         @endif
         <x-slot:footer>
             <x-nawasara-ui::button color="neutral" variant="outline" wire:click="closeDetail">Tutup</x-nawasara-ui::button>
+        </x-slot:footer>
+    </x-nawasara-ui::modal>
+
+    {{-- Task Log Modal --}}
+    <x-nawasara-ui::modal id="proxmox-vm-log" maxWidth="3xl"
+        :title="$this->logJob ? 'Log: '.str_replace('vm_', '', $this->logJob->action).' — '.$this->logJob->target_id : 'Task Log'">
+        @if ($this->logJob)
+            @php $j = $this->logJob; @endphp
+
+            {{-- Header status --}}
+            <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                @php
+                    $statusBadge = match ($j->status) {
+                        'queued' => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-300',
+                        'running' => 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                        'success' => 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                        'failed' => 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                        'conflict' => 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                        default => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
+                    };
+                @endphp
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium {{ $statusBadge }}">
+                    @if ($j->status === 'running')
+                        <x-lucide-loader-circle class="size-3 animate-spin" />
+                    @endif
+                    {{ ucfirst($j->status) }}
+                </span>
+                <span class="text-gray-500 dark:text-neutral-400">·</span>
+                <span class="text-gray-600 dark:text-neutral-300">{{ $j->action }}</span>
+                @if ($j->started_at)
+                    <span class="text-gray-500 dark:text-neutral-400">· started {{ $j->started_at->diffForHumans() }}</span>
+                @endif
+                @if ($j->duration_ms)
+                    <span class="text-gray-500 dark:text-neutral-400">· {{ number_format($j->duration_ms) }} ms</span>
+                @endif
+                @if ($upid = data_get($j->result, 'upid'))
+                    <span class="text-gray-500 dark:text-neutral-400">·</span>
+                    <span class="font-mono text-[11px] text-gray-500 dark:text-neutral-400" title="{{ $upid }}">UPID {{ \Illuminate\Support\Str::limit($upid, 36) }}</span>
+                @endif
+            </div>
+
+            @if ($j->error)
+                <div class="mb-3 px-3 py-2 rounded border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-400">
+                    <strong>Error:</strong> {{ $j->error }}
+                </div>
+            @endif
+
+            {{-- Log lines from Proxmox task log --}}
+            <div class="rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-900 dark:bg-black/40 max-h-96 overflow-auto">
+                <pre class="px-4 py-3 text-[11px] leading-relaxed font-mono text-green-300 whitespace-pre-wrap break-all">@forelse ($this->logLines as $line)<span class="text-neutral-500">{{ str_pad((string) ($line['n'] ?? ''), 4, ' ', STR_PAD_LEFT) }}</span>  {{ $line['t'] ?? '' }}
+@empty
+<span class="text-neutral-500">(belum ada log — task mungkin masih queued, atau UPID tidak tersedia.)</span>
+@endforelse</pre>
+            </div>
+        @endif
+        <x-slot:footer>
+            <x-nawasara-ui::button color="neutral" variant="outline" wire:click="closeLog">Tutup</x-nawasara-ui::button>
         </x-slot:footer>
     </x-nawasara-ui::modal>
 </div>

@@ -150,6 +150,20 @@ class ProxmoxClient
     }
 
     /**
+     * GET /nodes/{node}/tasks/{upid}/log — fetch task log lines.
+     *
+     * Returns a list of [{ n: int, t: string }, ...] where t is the line text.
+     */
+    public function getTaskLog(string $node, string $upid, int $start = 0, int $limit = 500): array
+    {
+        $r = $this->api()->get(
+            "/nodes/{$node}/tasks/".urlencode($upid).'/log',
+            ['start' => $start, 'limit' => $limit]
+        );
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
+    /**
      * Wait for an async task to finish, polling every $intervalSeconds.
      *
      * Returns the final task status array, or null on timeout.

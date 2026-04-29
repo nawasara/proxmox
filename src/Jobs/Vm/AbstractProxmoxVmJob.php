@@ -2,9 +2,11 @@
 
 namespace Nawasara\Proxmox\Jobs\Vm;
 
+use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Nawasara\Sync\Jobs\AbstractSyncJob;
+use Nawasara\Sync\Models\SyncJob;
 
 /**
  * Base for VM lifecycle/snapshot jobs.
@@ -88,10 +90,31 @@ abstract class AbstractProxmoxVmJob extends AbstractSyncJob
             $vm->update(['status' => $expectedStatus, 'last_synced_at' => now()]);
         }
 
+        // Re-sync the cluster snapshot so derived fields (uptime, cpu_usage,
+        // mem_used, lock state, etc.) reflect Proxmox truth — not just the
+        // expected status we wrote optimistically above.
+        SyncProxmoxVmsJob::dispatch(triggerSource: 'post_action');
+
         return [
             'action' => $action,
             'upid' => $upid,
             'task' => $taskStatus,
+            'node' => $this->node(),
         ];
+    }
+
+    /**
+     * Convenience: most recent SyncJob row for this exact VM target. Used by
+     * the UI to look up the current/last lifecycle action and tail its log.
+     */
+    public static function latestActionFor(string $vmType, int $vmid): ?SyncJob
+    {
+        return SyncJob::query()
+            ->where('service', 'proxmox')
+            ->where('target_type', 'ProxmoxVm')
+            ->where('target_id', $vmType.':'.$vmid)
+            ->whereIn('action', ['vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart'])
+            ->latest('id')
+            ->first();
     }
 }

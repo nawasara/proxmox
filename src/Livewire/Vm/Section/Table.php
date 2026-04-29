@@ -7,9 +7,12 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Nawasara\Proxmox\Jobs\Vm\AbstractProxmoxVmJob;
 use Nawasara\Proxmox\Models\ProxmoxNode;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Repositories\ProxmoxVmRepository;
+use Nawasara\Proxmox\Services\ProxmoxClient;
+use Nawasara\Sync\Models\SyncJob;
 use Nawasara\Ui\Livewire\Concerns\HasBrowserToast;
 
 class Table extends Component
@@ -33,6 +36,9 @@ class Table extends Component
 
     // Detail modal
     public ?int $detailId = null;
+
+    // Log modal
+    public ?int $logSyncJobId = null;
 
     public function updatedSearch(): void { $this->resetPage(); }
     public function updatedNodeFilter(): void { $this->resetPage(); }
@@ -142,6 +148,112 @@ class Table extends Component
     public function detail(): ?ProxmoxVm
     {
         return $this->detailId ? ProxmoxVm::find($this->detailId) : null;
+    }
+
+    /**
+     * Map of vm.id → latest lifecycle SyncJob row, for in-progress / failed
+     * indicators in the table. We compute it once per render so each row
+     * gets its tracker without N+1 queries.
+     */
+    #[Computed]
+    public function lifecycleJobs(): array
+    {
+        $targetIds = $this->vms->getCollection()
+            ->map(fn (ProxmoxVm $v) => $v->vm_type.':'.$v->vmid)
+            ->all();
+
+        if (empty($targetIds)) {
+            return [];
+        }
+
+        // Latest job per target_id via subquery
+        $latest = SyncJob::query()
+            ->where('service', 'proxmox')
+            ->where('target_type', 'ProxmoxVm')
+            ->whereIn('target_id', $targetIds)
+            ->whereIn('action', ['vm_start', 'vm_stop', 'vm_shutdown', 'vm_restart'])
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('target_id')
+            ->map(fn ($group) => $group->first());
+
+        $result = [];
+        foreach ($this->vms as $vm) {
+            $result[$vm->id] = $latest->get($vm->vm_type.':'.$vm->vmid);
+        }
+        return $result;
+    }
+
+    /**
+     * Whether any visible VM has a queued/running lifecycle job. Drives
+     * wire:poll so the table auto-refreshes while actions are in flight.
+     */
+    #[Computed]
+    public function hasPendingActions(): bool
+    {
+        foreach ($this->lifecycleJobs as $job) {
+            if ($job && in_array($job->status, [SyncJob::STATUS_QUEUED, SyncJob::STATUS_RUNNING], true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public function openLog(int $vmId): void
+    {
+        $vm = ProxmoxVm::find($vmId);
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        $job = AbstractProxmoxVmJob::latestActionFor($vm->vm_type, $vm->vmid);
+        if (! $job) {
+            $this->toastInfo('Belum ada aksi tercatat untuk VM ini.');
+            return;
+        }
+
+        $this->logSyncJobId = $job->id;
+        $this->dispatch('modal-open:proxmox-vm-log');
+    }
+
+    public function closeLog(): void
+    {
+        $this->logSyncJobId = null;
+        $this->dispatch('modal-close:proxmox-vm-log');
+    }
+
+    #[Computed]
+    public function logJob(): ?SyncJob
+    {
+        return $this->logSyncJobId ? SyncJob::find($this->logSyncJobId) : null;
+    }
+
+    /**
+     * Pulls the Proxmox task log lines for the currently open log modal.
+     * Each entry is { n: int, t: string }. Returns [] if the job has no
+     * UPID yet or the API call fails.
+     */
+    #[Computed]
+    public function logLines(): array
+    {
+        $job = $this->logJob;
+        if (! $job) {
+            return [];
+        }
+
+        $upid = data_get($job->result, 'upid');
+        $node = data_get($job->result, 'node') ?? data_get($job->payload, 'node');
+
+        if (! $upid || ! $node) {
+            return [];
+        }
+
+        try {
+            return app(ProxmoxClient::class)->getTaskLog($node, $upid, start: 0, limit: 1000);
+        } catch (\Throwable $e) {
+            return [['n' => 0, 't' => '(failed to load log: '.$e->getMessage().')']];
+        }
     }
 
     public function render()
