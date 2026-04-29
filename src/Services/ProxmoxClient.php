@@ -182,6 +182,24 @@ class ProxmoxClient
     }
 
     /**
+     * GET RRD data for a VM (time-series CPU/mem/disk/net).
+     *
+     * Each entry: { time: int, cpu: float, mem: int, maxmem: int,
+     * disk: int, netin: int, netout: int, ... }
+     *
+     * Timeframe values: hour | day | week | month | year.
+     */
+    public function getVmRrdData(string $node, int $vmid, string $type = 'qemu', string $timeframe = 'hour', string $cf = 'AVERAGE'): array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $r = $this->api()->get(
+            "/nodes/{$node}/{$type}/{$vmid}/rrddata",
+            ['timeframe' => $timeframe, 'cf' => $cf]
+        );
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
+    /**
      * GET /nodes/{node}/tasks/{upid}/log — fetch task log lines.
      *
      * Returns a list of [{ n: int, t: string }, ...] where t is the line text.

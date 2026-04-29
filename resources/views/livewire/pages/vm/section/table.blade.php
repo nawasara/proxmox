@@ -307,6 +307,27 @@
                 @endif
             </dl>
 
+            {{-- RRD sparkline (last hour) — only for running VMs --}}
+            @php $rrd = $this->detailRrd; @endphp
+            @if ($rrd)
+                <div class="mt-5 grid grid-cols-2 gap-4">
+                    <div class="px-3 py-3 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
+                        <div class="flex items-baseline justify-between mb-1">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">CPU (last 1h)</span>
+                            <span class="text-xs font-mono text-gray-600 dark:text-neutral-300">peak {{ $rrd['cpu_max_pct'] }}%</span>
+                        </div>
+                        <x-nawasara-proxmox::sparkline :points="$rrd['cpu']" color="#3b82f6" :min="0" class="w-full h-9" />
+                    </div>
+                    <div class="px-3 py-3 rounded border border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40">
+                        <div class="flex items-baseline justify-between mb-1">
+                            <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">Memory (last 1h)</span>
+                            <span class="text-xs font-mono text-gray-600 dark:text-neutral-300">peak {{ $rrd['mem_max_pct'] }}%</span>
+                        </div>
+                        <x-nawasara-proxmox::sparkline :points="$rrd['mem_pct']" color="#8b5cf6" :min="0" :max="100" class="w-full h-9" />
+                    </div>
+                </div>
+            @endif
+
             {{-- Live config from Proxmox API (network, disks, OS) --}}
             @php $cfg = $this->detailConfig; @endphp
             @if ($cfg)

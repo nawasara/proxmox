@@ -8,6 +8,7 @@ use Livewire\Component;
 use Nawasara\Proxmox\Models\ProxmoxNode;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Repositories\ProxmoxNodeRepository;
+use Nawasara\Sync\Models\SyncJob;
 use Nawasara\Ui\Livewire\Concerns\HasBrowserToast;
 
 class Overview extends Component
@@ -47,6 +48,20 @@ class Overview extends Component
     {
         $when = $this->repo()->lastSyncedAt();
         return $when ? $when->diffForHumans() : null;
+    }
+
+    /**
+     * Whether any cluster-wide sync is currently queued or running.
+     * Drives a fast wire:poll only while sync work is in flight.
+     */
+    #[Computed]
+    public function isSyncing(): bool
+    {
+        return SyncJob::query()
+            ->where('service', 'proxmox')
+            ->whereIn('action', ['sync_nodes', 'sync_vms'])
+            ->whereIn('status', [SyncJob::STATUS_QUEUED, SyncJob::STATUS_RUNNING])
+            ->exists();
     }
 
     public function refresh(): void

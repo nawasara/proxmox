@@ -1,4 +1,4 @@
-<div>
+<div wire:poll.{{ $this->isSyncing ? '4s' : '30s' }}>
     {{-- Sync info bar --}}
     <div class="mb-3 flex items-center justify-between text-xs text-gray-500 dark:text-neutral-400">
         <div class="flex items-center gap-3">

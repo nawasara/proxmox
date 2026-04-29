@@ -151,6 +151,66 @@ class Table extends Component
     }
 
     /**
+     * RRD time-series for the open detail modal — last hour, AVERAGE.
+     * Returns ['cpu' => [floats], 'mem_pct' => [floats]] for sparklines.
+     * Each series has the same length and is keyed in chronological order.
+     */
+    #[Computed]
+    public function detailRrd(): ?array
+    {
+        $vm = $this->detail;
+        if (! $vm || ! $vm->isRunning()) {
+            return null;
+        }
+
+        try {
+            $rows = app(ProxmoxClient::class)->getVmRrdData(
+                $vm->node_name, (int) $vm->vmid, $vm->vm_type, 'hour', 'AVERAGE'
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (empty($rows)) {
+            return null;
+        }
+
+        $cpu = [];
+        $memPct = [];
+        $maxCpuPct = 0.0;
+        $maxMemPct = 0.0;
+
+        foreach ($rows as $row) {
+            // Proxmox RRD reports cpu as 0..1 fraction
+            $c = isset($row['cpu']) ? round(((float) $row['cpu']) * 100, 2) : null;
+            $maxMem = (float) ($row['maxmem'] ?? 0);
+            $usedMem = (float) ($row['mem'] ?? 0);
+            $m = $maxMem > 0 ? round(($usedMem / $maxMem) * 100, 2) : null;
+
+            if ($c !== null) {
+                $cpu[] = $c;
+                $maxCpuPct = max($maxCpuPct, $c);
+            }
+            if ($m !== null) {
+                $memPct[] = $m;
+                $maxMemPct = max($maxMemPct, $m);
+            }
+        }
+
+        if (empty($cpu) && empty($memPct)) {
+            return null;
+        }
+
+        return [
+            'cpu' => $cpu,
+            'mem_pct' => $memPct,
+            'cpu_max_pct' => $maxCpuPct,
+            'mem_max_pct' => $maxMemPct,
+            'sample_count' => count($rows),
+        ];
+    }
+
+    /**
      * Live config from Proxmox API for the currently open detail modal.
      * Returns ['raw' => array, 'networks' => array, 'disks' => array] —
      * extracted so the view doesn't need to grok Proxmox naming conventions.
