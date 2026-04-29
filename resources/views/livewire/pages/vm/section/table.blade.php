@@ -186,59 +186,113 @@
     {{-- Detail Modal --}}
     <x-nawasara-ui::modal id="proxmox-vm-detail" maxWidth="2xl" :title="$this->detail ? ($this->detail->name ?? 'VM '.$this->detail->vmid) : ''">
         @if ($this->detail)
-            @php $v = $this->detail; @endphp
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                <div><span class="text-gray-500">VMID:</span> <span class="font-mono">{{ $v->vmid }}</span></div>
-                <div><span class="text-gray-500">Type:</span> <span>{{ $v->vm_type === 'qemu' ? 'Virtual Machine' : 'LXC Container' }}</span></div>
-                <div><span class="text-gray-500">Node:</span> <span class="font-mono">{{ $v->node_name }}</span></div>
-                <div><span class="text-gray-500">Status:</span> <span class="font-medium">{{ ucfirst($v->status) }}</span></div>
-                <div><span class="text-gray-500">vCPU:</span> {{ $v->cpu_count ?? '—' }}</div>
-                <div><span class="text-gray-500">CPU usage:</span>
-                    {{ $v->cpu_usage !== null ? round($v->cpu_usage * 100, 2).'%' : '—' }}
-                </div>
-                <div><span class="text-gray-500">Memory total:</span>
-                    {{ $v->mem_total ? number_format($v->mem_total / 1024 / 1024 / 1024, 2).' GB' : '—' }}
-                </div>
-                <div><span class="text-gray-500">Memory used:</span>
-                    {{ $v->mem_used ? number_format($v->mem_used / 1024 / 1024 / 1024, 2).' GB' : '—' }}
-                    @if ($v->memUsagePercent() !== null)
-                        <span class="text-gray-400">({{ $v->memUsagePercent() }}%)</span>
+            @php
+                $v = $this->detail;
+                $statusColor = match ($v->status) {
+                    'running' => 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                    'stopped' => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
+                    'paused' => 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                    default => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
+                };
+            @endphp
+
+            {{-- Header summary --}}
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+                @if ($v->vm_type === 'qemu')
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">VM</span>
+                @else
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">LXC</span>
+                @endif
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ $statusColor }}">
+                    @if ($v->status === 'running')
+                        <span class="size-1.5 rounded-full bg-green-500 mr-1"></span>
                     @endif
+                    {{ ucfirst($v->status ?? 'unknown') }}
+                </span>
+                @if ($v->template)
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400 uppercase">template</span>
+                @endif
+                @if ($v->isLocked())
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 uppercase">
+                        Locked: {{ $v->lock }}
+                    </span>
+                @endif
+            </div>
+
+            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">VMID</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">{{ $v->vmid }}</dd>
                 </div>
-                <div><span class="text-gray-500">Disk total:</span>
-                    {{ $v->disk_total ? number_format($v->disk_total / 1024 / 1024 / 1024, 0).' GB' : '—' }}
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Type</dt>
+                    <dd class="text-gray-900 dark:text-neutral-100">{{ $v->vm_type === 'qemu' ? 'Virtual Machine' : 'LXC Container' }}</dd>
                 </div>
-                <div><span class="text-gray-500">Uptime:</span>
-                    @if ($v->uptime)
-                        @php
-                            $d = floor($v->uptime / 86400);
-                            $h = floor(($v->uptime % 86400) / 3600);
-                            $m = floor(($v->uptime % 3600) / 60);
-                        @endphp
-                        {{ $d > 0 ? $d.'d ' : '' }}{{ $h }}h {{ $m }}m
-                    @else
-                        —
-                    @endif
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Node</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">{{ $v->node_name }}</dd>
                 </div>
-                <div><span class="text-gray-500">Template:</span> {{ $v->template ? 'Ya' : 'Tidak' }}</div>
-                <div><span class="text-gray-500">Lock:</span> {{ $v->lock ?? '—' }}</div>
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">vCPU</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">
+                        {{ $v->cpu_count ?? '—' }}
+                        @if ($v->cpu_usage !== null && $v->isRunning())
+                            <span class="text-gray-400 dark:text-neutral-500">({{ round($v->cpu_usage * 100, 1) }}%)</span>
+                        @endif
+                    </dd>
+                </div>
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Memory total</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">
+                        {{ $v->mem_total ? number_format($v->mem_total / 1024 / 1024 / 1024, 2).' GB' : '—' }}
+                    </dd>
+                </div>
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Memory used</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">
+                        {{ $v->mem_used ? number_format($v->mem_used / 1024 / 1024 / 1024, 2).' GB' : '—' }}
+                        @if ($v->memUsagePercent() !== null)
+                            <span class="text-gray-400 dark:text-neutral-500">({{ $v->memUsagePercent() }}%)</span>
+                        @endif
+                    </dd>
+                </div>
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Disk total</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">
+                        {{ $v->disk_total ? number_format($v->disk_total / 1024 / 1024 / 1024, 0).' GB' : '—' }}
+                    </dd>
+                </div>
+                <div class="flex justify-between gap-4 border-b border-gray-100 dark:border-neutral-800 pb-2">
+                    <dt class="text-gray-500 dark:text-neutral-400">Uptime</dt>
+                    <dd class="font-mono text-gray-900 dark:text-neutral-100">
+                        @if ($v->uptime && $v->isRunning())
+                            @php
+                                $d = floor($v->uptime / 86400);
+                                $h = floor(($v->uptime % 86400) / 3600);
+                                $m = floor(($v->uptime % 3600) / 60);
+                            @endphp
+                            {{ $d > 0 ? $d.'d ' : '' }}{{ $h }}h {{ $m }}m
+                        @else
+                            —
+                        @endif
+                    </dd>
+                </div>
 
                 @if (! empty($v->tags))
-                    <div class="col-span-2">
-                        <span class="text-gray-500">Tags:</span>
-                        <div class="mt-1 flex flex-wrap gap-1">
+                    <div class="col-span-2 pt-1">
+                        <dt class="text-gray-500 dark:text-neutral-400 mb-1">Tags</dt>
+                        <dd class="flex flex-wrap gap-1">
                             @foreach ($v->tags as $tag)
                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-neutral-700 dark:text-neutral-300">{{ $tag }}</span>
                             @endforeach
-                        </div>
+                        </dd>
                     </div>
                 @endif
 
-                <div class="col-span-2 mt-2 pt-3 border-t border-gray-200 dark:border-neutral-700">
-                    <span class="text-gray-500">Last synced:</span>
-                    {{ $v->last_synced_at?->diffForHumans() ?? '—' }}
+                <div class="col-span-2 mt-2 pt-3 border-t border-gray-200 dark:border-neutral-700 text-xs text-gray-500 dark:text-neutral-400">
+                    Last synced: {{ $v->last_synced_at?->diffForHumans() ?? '—' }}
                 </div>
-            </div>
+            </dl>
         @endif
         <x-slot:footer>
             <x-nawasara-ui::button color="neutral" variant="outline" wire:click="closeDetail">Tutup</x-nawasara-ui::button>
