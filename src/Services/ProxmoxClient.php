@@ -126,7 +126,10 @@ class ProxmoxClient
             throw new \InvalidArgumentException("Unsupported VM action: {$action}");
         }
 
-        $r = $this->api()->post("/nodes/{$node}/{$type}/{$vmid}/status/{$action}", $params);
+        // Proxmox expects form-encoded body for status mutations. Sending an
+        // empty JSON or no body triggers `Not a HASH reference` from the
+        // PVE::APIServer Perl backend, even on actions that take no params.
+        $r = $this->api()->asForm()->post("/nodes/{$node}/{$type}/{$vmid}/status/{$action}", $params);
 
         if (! $r->successful()) {
             throw new \RuntimeException("Proxmox action {$action} failed: HTTP ".$r->status().' '.$r->body());
