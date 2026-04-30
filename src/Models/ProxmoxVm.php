@@ -19,6 +19,7 @@ class ProxmoxVm extends Model
         'disk_total', 'disk_used',
         'uptime',
         'ip_addresses', 'tags', 'description',
+        'itop_server_id',
         'sync_status', 'sync_error', 'last_synced_at', 'content_hash',
     ];
 
