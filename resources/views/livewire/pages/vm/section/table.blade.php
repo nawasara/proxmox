@@ -486,20 +486,19 @@
                                         @endif
                                     </div>
                                     <div class="flex items-center gap-1 shrink-0">
-                                        <button type="button"
+                                        <x-nawasara-ui::button variant="ghost" color="warning" size="sm"
                                             wire:click="rollbackSnapshot('{{ $snap['name'] }}')"
                                             wire:confirm="Rollback VM ke snapshot '{{ $snap['name'] }}'?&#10;&#10;Semua perubahan setelah snapshot ini akan HILANG."
-                                            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-yellow-700 hover:bg-yellow-100 dark:text-yellow-400 dark:hover:bg-yellow-900/20"
                                             title="Rollback ke snapshot ini">
-                                            <x-lucide-rotate-ccw class="size-3" /> Rollback
-                                        </button>
-                                        <button type="button"
+                                            <x-slot:icon><x-lucide-rotate-ccw /></x-slot:icon>
+                                            Rollback
+                                        </x-nawasara-ui::button>
+                                        <x-nawasara-ui::button variant="ghost" color="danger" size="sm"
                                             wire:click="deleteSnapshot('{{ $snap['name'] }}')"
                                             wire:confirm="Hapus snapshot '{{ $snap['name'] }}'? Tidak bisa di-undo."
-                                            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-red-600 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/20"
                                             title="Hapus snapshot">
-                                            <x-lucide-trash-2 class="size-3" />
-                                        </button>
+                                            <x-slot:icon><x-lucide-trash-2 /></x-slot:icon>
+                                        </x-nawasara-ui::button>
                                     </div>
                                 </div>
                             @endforeach
