@@ -5,7 +5,7 @@
             @if ($this->lastSyncedAt)
                 <span><x-lucide-clock class="size-3 inline" /> Last sync: {{ $this->lastSyncedAt }}</span>
             @else
-                <span class="text-yellow-600">Belum pernah di-sync.</span>
+                <span class="text-amber-700 dark:text-amber-400">Belum pernah di-sync.</span>
             @endif
         </div>
         <x-nawasara-ui::button color="neutral" variant="outline" size="sm" wire:click="refresh">
@@ -16,63 +16,62 @@
         </x-nawasara-ui::button>
     </div>
 
-    {{-- Cluster totals --}}
-    @php $t = $this->clusterTotals; @endphp
+    {{-- Cluster totals — using design-system stat-card.
+         Color logic:
+         - Nodes: success kalau semua online, warning kalau ada offline
+         - VMs: primary (informational)
+         - vCPU/Memory/Storage: neutral (capacity, bukan health) --}}
+    @php
+        $t = $this->clusterTotals;
+        $nodesAllOnline = $t['nodes'] > 0 && $t['nodes_online'] === $t['nodes'];
+        $memPct = $t['mem_total'] ? round(($t['mem_used'] / $t['mem_total']) * 100, 1) : null;
+        $diskPct = $t['disk_total'] ? round(($t['disk_used'] / $t['disk_total']) * 100, 1) : null;
+
+        // Pick danger/warning/neutral color for capacity stats based on usage %.
+        $memColor = $memPct === null ? 'neutral' : ($memPct >= 90 ? 'danger' : ($memPct >= 75 ? 'warning' : 'neutral'));
+        $diskColor = $diskPct === null ? 'neutral' : ($diskPct >= 90 ? 'danger' : ($diskPct >= 75 ? 'warning' : 'neutral'));
+    @endphp
     <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-3">Cluster Summary</h2>
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <div class="p-4 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-            <div class="flex items-center gap-2 text-xs uppercase text-gray-500 dark:text-neutral-400">
-                <x-lucide-cpu class="size-4" /> Nodes
-            </div>
-            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                {{ $t['nodes_online'] }}<span class="text-sm text-gray-400 font-normal">/{{ $t['nodes'] }}</span>
-            </div>
-            <div class="text-xs text-gray-500 dark:text-neutral-400">online</div>
-        </div>
-        <div class="p-4 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-            <div class="flex items-center gap-2 text-xs uppercase text-gray-500 dark:text-neutral-400">
-                <x-lucide-monitor class="size-4" /> Virtual Machines
-            </div>
-            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                {{ $t['vm_running'] }}<span class="text-sm text-gray-400 font-normal">/{{ $t['vm_count'] }}</span>
-            </div>
-            <div class="text-xs text-gray-500 dark:text-neutral-400">running</div>
-        </div>
-        <div class="p-4 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-            <div class="flex items-center gap-2 text-xs uppercase text-gray-500 dark:text-neutral-400">
-                <x-lucide-microchip class="size-4" /> Total vCPU
-            </div>
-            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ number_format($t['cpu_total']) }}</div>
-            <div class="text-xs text-gray-500 dark:text-neutral-400">cores</div>
-        </div>
-        <div class="p-4 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-            <div class="flex items-center gap-2 text-xs uppercase text-gray-500 dark:text-neutral-400">
-                <x-lucide-memory-stick class="size-4" /> Memory
-            </div>
-            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                {{ $t['mem_total'] ? number_format($t['mem_total'] / 1024 / 1024 / 1024, 0) : '—' }}
-                <span class="text-sm text-gray-400 font-normal">GB</span>
-            </div>
-            @if ($t['mem_total'])
-                <div class="text-xs text-gray-500 dark:text-neutral-400">
-                    {{ round(($t['mem_used'] / $t['mem_total']) * 100, 1) }}% used
-                </div>
-            @endif
-        </div>
-        <div class="p-4 rounded-xl border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-            <div class="flex items-center gap-2 text-xs uppercase text-gray-500 dark:text-neutral-400">
-                <x-lucide-hard-drive class="size-4" /> Storage
-            </div>
-            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
-                {{ $t['disk_total'] ? number_format($t['disk_total'] / 1024 / 1024 / 1024 / 1024, 1) : '—' }}
-                <span class="text-sm text-gray-400 font-normal">TB</span>
-            </div>
-            @if ($t['disk_total'])
-                <div class="text-xs text-gray-500 dark:text-neutral-400">
-                    {{ round(($t['disk_used'] / $t['disk_total']) * 100, 1) }}% used
-                </div>
-            @endif
-        </div>
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        <x-nawasara-ui::stat-card
+            label="Nodes"
+            :value="$t['nodes_online'].' / '.$t['nodes']"
+            icon="lucide-cpu"
+            :color="$nodesAllOnline ? 'success' : ($t['nodes_online'] === 0 ? 'danger' : 'warning')"
+            description="online"
+            accent />
+
+        <x-nawasara-ui::stat-card
+            label="Virtual Machines"
+            :value="$t['vm_running'].' / '.$t['vm_count']"
+            icon="lucide-monitor"
+            color="primary"
+            description="running"
+            accent />
+
+        <x-nawasara-ui::stat-card
+            label="Total vCPU"
+            :value="number_format($t['cpu_total'])"
+            icon="lucide-microchip"
+            color="neutral"
+            description="cores"
+            accent />
+
+        <x-nawasara-ui::stat-card
+            label="Memory"
+            :value="$t['mem_total'] ? number_format($t['mem_total'] / 1024 / 1024 / 1024, 0).' GB' : '—'"
+            icon="lucide-memory-stick"
+            :color="$memColor"
+            :description="$memPct !== null ? $memPct.'% used' : null"
+            accent />
+
+        <x-nawasara-ui::stat-card
+            label="Storage"
+            :value="$t['disk_total'] ? number_format($t['disk_total'] / 1024 / 1024 / 1024 / 1024, 1).' TB' : '—'"
+            icon="lucide-hard-drive"
+            :color="$diskColor"
+            :description="$diskPct !== null ? $diskPct.'% used' : null"
+            accent />
     </div>
 
     {{-- Per-node detail --}}
@@ -147,15 +146,22 @@
 
                 <div class="mt-3 pt-3 border-t border-gray-200 dark:border-neutral-700">
                     <a href="{{ url('nawasara-proxmox/vms?nodeFilter='.$node->node_name) }}" wire:navigate
-                        class="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                        class="text-xs text-emerald-700 dark:text-emerald-400 hover:underline font-medium">
                         Lihat VM di node ini →
                     </a>
                 </div>
             </div>
         @empty
-            <div class="col-span-full text-center py-12 border-2 border-dashed border-gray-200 dark:border-neutral-700 rounded-xl">
-                <x-lucide-server class="size-12 mx-auto text-gray-300 dark:text-neutral-600" />
-                <p class="mt-3 text-sm text-gray-500 dark:text-neutral-400">Belum ada data node. Klik <strong>Sync Sekarang</strong>.</p>
+            <div class="col-span-full text-center py-16 px-6 border-2 border-dashed border-gray-200 dark:border-neutral-700 rounded-xl bg-gray-50/50 dark:bg-neutral-900/40">
+                <div class="inline-flex items-center justify-center size-14 rounded-2xl bg-gray-100 dark:bg-neutral-800 mb-4">
+                    <x-lucide-server class="size-7 text-gray-400 dark:text-neutral-500" />
+                </div>
+                <p class="text-base font-semibold text-gray-800 dark:text-neutral-200">
+                    Belum ada data node
+                </p>
+                <p class="mt-2 text-sm text-gray-500 dark:text-neutral-400 max-w-sm mx-auto">
+                    Klik <strong class="text-gray-700 dark:text-neutral-300">Sync Sekarang</strong> di atas untuk fetch cluster state dari Proxmox.
+                </p>
             </div>
         @endforelse
     </div>
