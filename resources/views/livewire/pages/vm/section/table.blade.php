@@ -5,7 +5,7 @@
             @if ($this->lastSyncedAt)
                 <span><x-lucide-clock class="size-3 inline" /> Last sync: {{ $this->lastSyncedAt }}</span>
             @else
-                <span class="text-yellow-600">Belum pernah di-sync. Klik "Sync Sekarang".</span>
+                <span class="text-amber-700 dark:text-amber-400">Belum pernah di-sync. Klik "Sync Sekarang".</span>
             @endif
 
             @php $sc = $this->statusCounts; @endphp
@@ -22,7 +22,7 @@
                 @endif
             @endif
         </div>
-        <a href="{{ url('admin/sync/jobs?service=proxmox') }}" wire:navigate class="text-blue-600 hover:underline">
+        <a href="{{ url('admin/sync/jobs?service=proxmox') }}" wire:navigate class="text-emerald-700 dark:text-emerald-400 hover:underline font-medium">
             Lihat Sync Jobs →
         </a>
     </div>
@@ -107,7 +107,7 @@
                             </span>
                         @elseif ($vm->status === 'running')
                             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                <span class="size-1.5 rounded-full bg-green-500"></span> Running
+                                <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot"></span> Running
                             </span>
                         @elseif ($vm->status === 'stopped')
                             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400">
@@ -222,7 +222,7 @@
                 @endif
                 <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ $statusColor }}">
                     @if ($v->status === 'running')
-                        <span class="size-1.5 rounded-full bg-green-500 mr-1"></span>
+                        <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot mr-1"></span>
                     @endif
                     {{ ucfirst($v->status ?? 'unknown') }}
                 </span>

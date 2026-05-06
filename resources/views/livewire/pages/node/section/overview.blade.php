@@ -32,6 +32,15 @@
         $diskColor = $diskPct === null ? 'neutral' : ($diskPct >= 90 ? 'danger' : ($diskPct >= 75 ? 'warning' : 'neutral'));
     @endphp
     <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-3">Cluster Summary</h2>
+
+    {{-- Initial load skeleton: tampil saat belum ada data sama sekali (nodes=0)
+         dan sync sedang berjalan. Saat data sudah ada, langsung render stats
+         tanpa skeleton — re-sync hanya update angka tanpa flicker. --}}
+    @if ($t['nodes'] === 0 && $this->isSyncing)
+        <div class="mb-6">
+            <x-nawasara-ui::skeleton-stats :cards="5" :cols="5" />
+        </div>
+    @else
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <x-nawasara-ui::stat-card
             label="Nodes"
@@ -73,6 +82,7 @@
             :description="$diskPct !== null ? $diskPct.'% used' : null"
             accent />
     </div>
+    @endif
 
     {{-- Per-node detail --}}
     <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-3">Per-Node Detail</h2>
@@ -86,7 +96,7 @@
                     </div>
                     @if ($node->status === 'online')
                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            <span class="size-1.5 rounded-full bg-green-500"></span> Online
+                            <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot"></span> Online
                         </span>
                     @else
                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
