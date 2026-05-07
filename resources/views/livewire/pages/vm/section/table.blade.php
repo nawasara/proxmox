@@ -123,31 +123,34 @@
                     <td class="px-4 py-3 whitespace-nowrap text-sm">
                         @php $lc = $this->lifecycleJobs[$vm->id] ?? null; @endphp
                         @if ($lc && in_array($lc->status, ['queued', 'running']))
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                <x-lucide-loader-circle class="size-3 animate-spin" />
+                            {{-- In-flight lifecycle action takes priority over the VM's
+                                 cached status — gives operator instant feedback that
+                                 a start/stop/restart is mid-flight. --}}
+                            <x-nawasara-ui::badge color="blue" icon="lucide-loader-circle"
+                                class="[&_svg]:animate-spin">
                                 {{ ucfirst(str_replace('vm_', '', $lc->action)) }}…
-                            </span>
+                            </x-nawasara-ui::badge>
                         @elseif ($lc && $lc->status === 'failed' && $lc->finished_at?->gt(now()->subMinutes(5)))
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400" title="{{ $lc->error }}">
-                                <x-lucide-circle-alert class="size-3" />
+                            <x-nawasara-ui::badge color="danger" icon="lucide-circle-alert"
+                                :title="$lc->error">
                                 {{ ucfirst(str_replace('vm_', '', $lc->action)) }} failed
-                            </span>
+                            </x-nawasara-ui::badge>
                         @elseif ($vm->status === 'running')
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot"></span> Running
-                            </span>
+                            {{-- Running: animated dot replaces the icon to convey
+                                 'live, breathing' state more vividly than a static
+                                 check icon would. --}}
+                            <x-nawasara-ui::badge color="success">
+                                <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot mr-1"></span>
+                                Running
+                            </x-nawasara-ui::badge>
                         @elseif ($vm->status === 'stopped')
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400">
-                                Stopped
-                            </span>
+                            <x-nawasara-ui::badge color="neutral">Stopped</x-nawasara-ui::badge>
                         @elseif ($vm->status === 'paused')
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                                Paused
-                            </span>
+                            <x-nawasara-ui::badge color="warning">Paused</x-nawasara-ui::badge>
                         @else
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400">
+                            <x-nawasara-ui::badge color="neutral">
                                 {{ ucfirst($vm->status ?? 'unknown') }}
-                            </span>
+                            </x-nawasara-ui::badge>
                         @endif
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
@@ -241,27 +244,28 @@
         @if ($this->detail)
             @php
                 $v = $this->detail;
-                $statusColor = match ($v->status) {
-                    'running' => 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-                    'stopped' => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
-                    'paused' => 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-                    default => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
+                $statusBadgeColor = match ($v->status) {
+                    'running' => 'success',
+                    'paused' => 'warning',
+                    default => 'neutral',
                 };
             @endphp
 
-            {{-- Header summary --}}
+            {{-- Header summary. VM/LXC type pills stay rectangular (rounded
+                 not rounded-full) to read as compact categorical tags
+                 distinct from the rounded status badge below. --}}
             <div class="mb-4 flex flex-wrap items-center gap-2">
                 @if ($v->vm_type === 'qemu')
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">VM</span>
                 @else
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">LXC</span>
                 @endif
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ $statusColor }}">
+                <x-nawasara-ui::badge :color="$statusBadgeColor">
                     @if ($v->status === 'running')
                         <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot mr-1"></span>
                     @endif
                     {{ ucfirst($v->status ?? 'unknown') }}
-                </span>
+                </x-nawasara-ui::badge>
                 @if ($v->template)
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400 uppercase">template</span>
                 @endif
@@ -561,21 +565,20 @@
             {{-- Header status --}}
             <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
                 @php
-                    $statusBadge = match ($j->status) {
-                        'queued' => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-300',
-                        'running' => 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-                        'success' => 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-                        'failed' => 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                        'conflict' => 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-                        default => 'bg-gray-100 text-gray-600 dark:bg-neutral-700 dark:text-neutral-400',
+                    $jobStatusColor = match ($j->status) {
+                        'queued' => 'neutral',
+                        'running' => 'blue',
+                        'success' => 'success',
+                        'failed' => 'danger',
+                        'conflict' => 'warning',
+                        default => 'neutral',
                     };
                 @endphp
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium {{ $statusBadge }}">
-                    @if ($j->status === 'running')
-                        <x-lucide-loader-circle class="size-3 animate-spin" />
-                    @endif
+                <x-nawasara-ui::badge :color="$jobStatusColor"
+                    :icon="$j->status === 'running' ? 'lucide-loader-circle' : null"
+                    :class="$j->status === 'running' ? '[&_svg]:animate-spin' : ''">
                     {{ ucfirst($j->status) }}
-                </span>
+                </x-nawasara-ui::badge>
                 <span class="text-gray-500 dark:text-neutral-400">·</span>
                 <span class="text-gray-600 dark:text-neutral-300">{{ $j->action }}</span>
                 @if ($j->started_at)
