@@ -1,69 +1,96 @@
 <div @if ($this->hasPendingActions) wire:poll.4s @elseif ($detailId) wire:poll.10s @endif>
-    {{-- Sync info bar --}}
-    <div class="mb-3 flex items-center justify-between text-xs text-gray-500 dark:text-neutral-400">
-        <div class="flex items-center gap-3">
-            @if ($this->lastSyncedAt)
-                <span><x-lucide-clock class="size-3 inline" /> Last sync: {{ $this->lastSyncedAt }}</span>
-            @else
-                <span class="text-amber-700 dark:text-amber-400">Belum pernah di-sync. Klik "Sync Sekarang".</span>
-            @endif
+    @php
+        $statusOptions = ['running' => 'Running', 'stopped' => 'Stopped', 'paused' => 'Paused'];
+        $typeOptions = ['qemu' => 'VM (qemu)', 'lxc' => 'Container (LXC)'];
+        $sc = $this->statusCounts;
+    @endphp
 
-            @php $sc = $this->statusCounts; @endphp
-            @if (! empty($sc))
-                <span>·</span>
-                @if (($sc['running'] ?? 0) > 0)
-                    <span class="text-green-600">{{ $sc['running'] }} running</span>
-                @endif
-                @if (($sc['stopped'] ?? 0) > 0)
-                    <span class="text-gray-500">{{ $sc['stopped'] }} stopped</span>
-                @endif
-                @if (($sc['paused'] ?? 0) > 0)
-                    <span class="text-yellow-600">{{ $sc['paused'] }} paused</span>
-                @endif
-            @endif
-        </div>
-        <a href="{{ url('admin/sync/jobs?service=proxmox') }}" wire:navigate class="text-emerald-700 dark:text-emerald-400 hover:underline font-medium">
+    {{-- Page header — title + description left, sync metadata + sync
+         button right. The sync info (last-synced + status counts) used
+         to live in a separate row below the title; merged here so the
+         page chrome reads as one unit. --}}
+    <x-nawasara-ui::page-header
+        title="Virtual Machines"
+        description="VM dan container (LXC) di seluruh node cluster Proxmox. Sync periodik tiap 15 menit."
+        :count="$this->vms->total().' total'">
+        <a href="{{ url('admin/sync/jobs?service=proxmox') }}" wire:navigate
+            class="text-xs text-emerald-700 dark:text-emerald-400 hover:underline font-medium whitespace-nowrap">
             Lihat Sync Jobs →
         </a>
+
+        @can('proxmox.sync.execute')
+            <x-nawasara-ui::tooltip text="Sync sekarang dari Proxmox API" placement="bottom">
+                <button type="button" wire:click="refresh"
+                    wire:loading.attr="disabled" wire:target="refresh"
+                    aria-label="Sync Sekarang"
+                    class="inline-flex items-center justify-center size-10 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-700 shadow-sm transition-colors disabled:opacity-50 disabled:pointer-events-none">
+                    <x-lucide-refresh-cw class="size-4" wire:loading.class="animate-spin" wire:target="refresh" />
+                </button>
+            </x-nawasara-ui::tooltip>
+        @endcan
+
+        <x-nawasara-ui::export-button
+            action="export"
+            tooltip="Ekspor inventory VM"
+            permission="proxmox.vm.view" />
+    </x-nawasara-ui::page-header>
+
+    {{-- Status summary cards — non-clickable (visual only) since the
+         filter-panel below already handles status as a multi-select
+         dimension. Sync metadata (last sync time) shown alongside as
+         an extra at-a-glance signal. --}}
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <x-nawasara-ui::stat-card compact label="Running"  :value="$sc['running']  ?? 0" color="success" />
+        <x-nawasara-ui::stat-card compact label="Stopped"  :value="$sc['stopped']  ?? 0" color="neutral" />
+        <x-nawasara-ui::stat-card compact label="Paused"   :value="$sc['paused']   ?? 0" color="warning" />
+        <x-nawasara-ui::stat-card compact label="Last sync"
+            :value="$this->lastSyncedAt ?? '—'"
+            color="primary"
+            description="dari API Proxmox" />
     </div>
 
-    <x-nawasara-ui::filter-bar searchPlaceholder="Cari nama, vmid, deskripsi..." searchModel="search">
-        <x-nawasara-ui::filter-dropdown label="Node" model="nodeFilter" :items="$this->nodeOptions" />
-        <x-nawasara-ui::filter-dropdown label="Status" model="statusFilter"
-            :items="['all' => 'Semua Status', 'running' => 'Running', 'stopped' => 'Stopped', 'paused' => 'Paused']" />
-        <x-nawasara-ui::filter-dropdown label="Type" model="typeFilter"
-            :items="['all' => 'VM + Container', 'qemu' => 'VM (qemu)', 'lxc' => 'Container (LXC)']" />
-        <x-nawasara-ui::filter-dropdown label="Template" model="templateFilter"
-            :items="['hide' => 'Sembunyikan template', 'only' => 'Hanya template', 'all' => 'Tampilkan semua']" />
+    {{-- Toolbar — Node + Status + Type multi-select, Template tri-state,
+         search, refresh, export. --}}
+    <div class="space-y-2 mb-4">
+        <div class="flex flex-col md:flex-row md:flex-nowrap md:items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+                <x-nawasara-ui::filter-panel
+                    label="Filter"
+                    :state="['nodeFilter' => $nodeFilter, 'statusFilter' => $statusFilter, 'typeFilter' => $typeFilter, 'templateFilter' => $templateFilter]"
+                    :multiple="['nodeFilter', 'statusFilter', 'typeFilter']"
+                    :labels="['nodeFilter' => $this->nodeOptions, 'statusFilter' => $statusOptions, 'typeFilter' => $typeOptions, 'templateFilter' => ['hide' => 'Sembunyikan template', 'only' => 'Hanya template', 'all' => 'Tampilkan semua']]"
+                    :dimensions="['nodeFilter' => 'Node', 'statusFilter' => 'Status', 'typeFilter' => 'Type', 'templateFilter' => 'Template']">
+                    <x-nawasara-ui::filter-group label="Node" model="nodeFilter" :items="$this->nodeOptions" icon="lucide-server" />
+                    <x-nawasara-ui::filter-group label="Status" model="statusFilter" :items="$statusOptions" icon="lucide-circle-dot" />
+                    <x-nawasara-ui::filter-group label="Type" model="typeFilter" :items="$typeOptions" icon="lucide-box" />
+                    <x-nawasara-ui::filter-group label="Template" model="templateFilter"
+                        :items="['hide' => 'Sembunyikan template', 'only' => 'Hanya template', 'all' => 'Tampilkan semua']"
+                        icon="lucide-layers" />
+                </x-nawasara-ui::filter-panel>
+            </div>
 
-        <x-slot:actions>
-            <x-nawasara-ui::button color="neutral" variant="outline" size="sm" wire:click="refresh">
-                <x-slot:icon>
-                    <x-lucide-refresh-cw wire:loading.class="animate-spin" wire:target="refresh" />
-                </x-slot:icon>
-                Sync Sekarang
-            </x-nawasara-ui::button>
-        </x-slot:actions>
+            <div class="relative w-full md:flex-1 md:min-w-0">
+                <div class="absolute inset-y-0 start-0 flex items-center pointer-events-none ps-3.5">
+                    <x-lucide-search class="shrink-0 size-4 text-gray-400 dark:text-neutral-500" />
+                </div>
+                <input type="text" wire:model.live.debounce.300ms="search"
+                    placeholder="Cari nama, vmid, atau deskripsi..."
+                    class="h-10 ps-10 pe-4 block w-full border border-gray-200 rounded-lg text-sm focus:border-emerald-600 focus:ring-emerald-600 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-200 dark:placeholder-neutral-500 dark:focus:ring-neutral-600" />
+            </div>
+        </div>
 
-        <x-slot:chips>
-            @if ($nodeFilter)
-                <x-nawasara-ui::filter-chip label="Node: {{ $nodeFilter }}" model="nodeFilter" />
-            @endif
-            @if ($statusFilter)
-                <x-nawasara-ui::filter-chip label="Status: {{ ucfirst($statusFilter) }}" model="statusFilter" />
-            @endif
-            @if ($typeFilter)
-                <x-nawasara-ui::filter-chip label="Type: {{ $typeFilter }}" model="typeFilter" />
-            @endif
-            @if ($search)
+        <div wire:ignore data-filter-chips></div>
+
+        @if ($search)
+            <div class="flex flex-wrap items-center gap-2">
                 <x-nawasara-ui::filter-chip label="Cari: {{ $search }}" model="search" />
-            @endif
-        </x-slot:chips>
-    </x-nawasara-ui::filter-bar>
+            </div>
+        @endif
+    </div>
 
     <x-nawasara-ui::table
-        :headers="['VMID', 'Name', 'Type', 'Node', 'Status', 'CPU', 'Memory', 'Disk', 'Uptime', '']"
-        :title="'VMs ('.$this->vms->total().' total)'">
+        stickyLast
+        :headers="['VMID', 'Name', 'Type', 'Node', 'Status', 'CPU', 'Memory', 'Disk', 'Uptime', '']">
         <x-slot:table>
             @forelse ($this->vms as $vm)
                 <tr wire:key="vm-{{ $vm->id }}">

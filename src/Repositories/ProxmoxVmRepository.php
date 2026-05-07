@@ -145,13 +145,22 @@ class ProxmoxVmRepository implements SyncedRepository
         return $this->lastSuccessfulSyncAt('proxmox', 'sync_vms');
     }
 
+    /**
+     * Build the base list query. Filters are polymorphic — values can be
+     * strings (legacy) or arrays (filter-panel multi-select). Status uses
+     * a direct closure here instead of a model scope so we can apply the
+     * same string|array logic inline.
+     */
     protected function query(array $filters = [])
     {
         return ProxmoxVm::query()
             ->search($filters['search'] ?? null)
             ->ofType($filters['type'] ?? null)
             ->onNode($filters['node'] ?? null)
-            ->when(($filters['status'] ?? null), fn ($q, $s) => $q->where('status', $s))
+            ->when(! empty($filters['status'] ?? null), function ($q) use ($filters) {
+                $s = $filters['status'];
+                is_array($s) ? $q->whereIn('status', $s) : $q->where('status', $s);
+            })
             ->when(($filters['template'] ?? null) === 'only', fn ($q) => $q->where('template', true))
             ->when(($filters['template'] ?? null) === 'hide', fn ($q) => $q->where('template', false));
     }

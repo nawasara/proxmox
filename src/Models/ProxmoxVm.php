@@ -53,20 +53,36 @@ class ProxmoxVm extends Model
         return $query->where('status', 'stopped');
     }
 
-    public function scopeOfType($query, ?string $type)
+    /**
+     * Polymorphic VM-type filter. Accepts string for single match or
+     * array<string> for multi-select (filter-panel arrays). Empty value
+     * (null, '', []) is a no-op.
+     *
+     * @param  string|array<int,string>|null  $type
+     */
+    public function scopeOfType($query, string|array|null $type)
     {
-        if (! $type) {
+        if (empty($type)) {
             return $query;
         }
-        return $query->where('vm_type', $type);
+        return is_array($type)
+            ? $query->whereIn('vm_type', $type)
+            : $query->where('vm_type', $type);
     }
 
-    public function scopeOnNode($query, ?string $node)
+    /**
+     * Polymorphic node filter. Same shape as scopeOfType.
+     *
+     * @param  string|array<int,string>|null  $node
+     */
+    public function scopeOnNode($query, string|array|null $node)
     {
-        if (! $node) {
+        if (empty($node)) {
             return $query;
         }
-        return $query->where('node_name', $node);
+        return is_array($node)
+            ? $query->whereIn('node_name', $node)
+            : $query->where('node_name', $node);
     }
 
     public function scopeSearch($query, ?string $term)

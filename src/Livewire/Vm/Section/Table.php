@@ -14,21 +14,38 @@ use Nawasara\Proxmox\Repositories\ProxmoxVmRepository;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Nawasara\Sync\Models\SyncJob;
 use Nawasara\Ui\Livewire\Concerns\HasBrowserToast;
+use Nawasara\Ui\Livewire\Concerns\HasExport;
 
 class Table extends Component
 {
     use HasBrowserToast;
+    use HasExport;
     use WithPagination;
 
-    #[Url(except: '')]
-    public string $nodeFilter = '';
+    /**
+     * Multi-select filters using filter-panel array semantics.
+     * Empty array == no filter; the model scopes accept either string or
+     * array via polymorphic signature.
+     *
+     * @var array<int, string>
+     */
+    #[Url]
+    public array $nodeFilter = [];
 
-    #[Url(except: '')]
-    public string $statusFilter = '';
+    /** @var array<int, string> */
+    #[Url]
+    public array $statusFilter = [];
 
-    #[Url(except: '')]
-    public string $typeFilter = '';
+    /** @var array<int, string> */
+    #[Url]
+    public array $typeFilter = [];
 
+    /**
+     * Template visibility — single-select tri-state ('hide' / 'only' /
+     * 'all'). Stays scalar because the underlying SQL is exclusive
+     * (template=true OR template=false OR no constraint).
+     */
+    #[Url(except: 'hide')]
     public string $templateFilter = 'hide'; // default sembunyikan template
 
     public string $search = '';
@@ -62,18 +79,26 @@ class Table extends Component
     {
         return $this->repo()->list([
             'search' => $this->search ?: null,
-            'node' => $this->nodeFilter ?: null,
-            'status' => $this->statusFilter ?: null,
-            'type' => $this->typeFilter ?: null,
+            // Empty arrays pass through; polymorphic scopes are no-op on empty.
+            'node' => $this->nodeFilter,
+            'status' => $this->statusFilter,
+            'type' => $this->typeFilter,
             'template' => $this->templateFilter ?: null,
         ], $this->perPage);
     }
 
+    /**
+     * Node names for the filter-panel "Node" dimension. No 'all' sentinel
+     * here — filter-panel uses empty array == no filter. Each node maps
+     * to itself (key == label) since node_name is short and explicit.
+     *
+     * @return array<string, string>
+     */
     #[Computed]
     public function nodeOptions(): array
     {
         $nodes = ProxmoxNode::orderBy('node_name')->pluck('node_name')->all();
-        $opts = ['all' => 'Semua Node'];
+        $opts = [];
         foreach ($nodes as $n) {
             $opts[$n] = $n;
         }
@@ -550,6 +575,46 @@ class Table extends Component
         } catch (\Throwable $e) {
             return [['n' => 0, 't' => '(failed to load log: '.$e->getMessage().')']];
         }
+    }
+
+    /**
+     * Export filename base — timestamp + extension appended by HasExport.
+     */
+    protected function exportFilename(): string
+    {
+        return 'proxmox-vms';
+    }
+
+    /**
+     * Export FULL VM inventory (no filter) per spec. Includes node + type
+     * + status + resources so an offline review can spot capacity issues
+     * without re-querying. Templates included with explicit flag column.
+     */
+    protected function exportData(): iterable
+    {
+        return ProxmoxVm::query()
+            ->orderBy('node_name')
+            ->orderBy('vmid')
+            ->get()
+            ->map(fn (ProxmoxVm $vm) => [
+                'VMID' => $vm->vmid,
+                'Name' => $vm->name,
+                'Type' => $vm->vm_type,
+                'Node' => $vm->node_name,
+                'Status' => $vm->status,
+                'Template' => $vm->template ? 'Yes' : 'No',
+                'CPU Cores' => $vm->cpu_count,
+                'CPU Usage %' => $vm->cpu_usage !== null ? round($vm->cpu_usage * 100, 2) : null,
+                'Memory MB' => $vm->mem_total ? round($vm->mem_total / 1024 / 1024) : null,
+                'Memory Used MB' => $vm->mem_used ? round($vm->mem_used / 1024 / 1024) : null,
+                'Disk GB' => $vm->disk_total ? round($vm->disk_total / 1024 / 1024 / 1024, 1) : null,
+                'Disk Used GB' => $vm->disk_used ? round($vm->disk_used / 1024 / 1024 / 1024, 1) : null,
+                'IP Addresses' => is_array($vm->ip_addresses) ? implode(', ', $vm->ip_addresses) : (string) $vm->ip_addresses,
+                'Tags' => is_array($vm->tags) ? implode(', ', $vm->tags) : (string) $vm->tags,
+                'Locked' => $vm->lock ?: '',
+                'Description' => $vm->description,
+                'Last Synced' => optional($vm->last_synced_at)->format('Y-m-d H:i'),
+            ]);
     }
 
     public function render()
