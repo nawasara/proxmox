@@ -13,11 +13,13 @@ use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Repositories\ProxmoxVmRepository;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Nawasara\Sync\Models\SyncJob;
+use Nawasara\Ui\Livewire\Concerns\HasArrayFilters;
 use Nawasara\Ui\Livewire\Concerns\HasBrowserToast;
 use Nawasara\Ui\Livewire\Concerns\HasExport;
 
 class Table extends Component
 {
+    use HasArrayFilters;
     use HasBrowserToast;
     use HasExport;
     use WithPagination;
@@ -27,18 +29,24 @@ class Table extends Component
      * Empty array == no filter; the model scopes accept either string or
      * array via polymorphic signature.
      *
+     * NOTE: type hint dropped from `array` to untyped because legacy
+     * bookmarks like `?nodeFilter=pve-2` would hydrate as string and
+     * crash a typed array property. HasArrayFilters trait coerces the
+     * scalar to a single-element array at boot time. PHPDoc preserves
+     * the intent for IDEs and code review.
+     *
      * @var array<int, string>
      */
     #[Url]
-    public array $nodeFilter = [];
+    public $nodeFilter = [];
 
     /** @var array<int, string> */
     #[Url]
-    public array $statusFilter = [];
+    public $statusFilter = [];
 
     /** @var array<int, string> */
     #[Url]
-    public array $typeFilter = [];
+    public $typeFilter = [];
 
     /**
      * Template visibility — single-select tri-state ('hide' / 'only' /
@@ -72,6 +80,16 @@ class Table extends Component
     protected function repo(): ProxmoxVmRepository
     {
         return new ProxmoxVmRepository();
+    }
+
+    /**
+     * Filters that may receive scalar values from legacy bookmarks
+     * (`?nodeFilter=pve-2`). HasArrayFilters wraps any scalar into a
+     * single-element array before computed properties read them.
+     */
+    protected function arrayFilters(): array
+    {
+        return ['nodeFilter', 'statusFilter', 'typeFilter'];
     }
 
     #[Computed]
