@@ -19,14 +19,7 @@
         </a>
 
         @can('proxmox.sync.execute')
-            <x-nawasara-ui::tooltip text="Sync sekarang dari Proxmox API" placement="bottom">
-                <button type="button" wire:click="refresh"
-                    wire:loading.attr="disabled" wire:target="refresh"
-                    aria-label="Sync Sekarang"
-                    class="inline-flex items-center justify-center size-10 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-700 shadow-sm transition-colors disabled:opacity-50 disabled:pointer-events-none">
-                    <x-lucide-refresh-cw class="size-4" wire:loading.class="animate-spin" wire:target="refresh" />
-                </button>
-            </x-nawasara-ui::tooltip>
+            <x-nawasara-ui::icon-button icon="refresh-cw" tooltip="Sync sekarang dari Proxmox API" wire:click="refresh" loadingTarget="refresh" />
         @endcan
 
         <x-nawasara-ui::export-button
@@ -69,14 +62,7 @@
                 </x-nawasara-ui::filter-panel>
             </div>
 
-            <div class="relative w-full md:flex-1 md:min-w-0">
-                <div class="absolute inset-y-0 start-0 flex items-center pointer-events-none ps-3.5">
-                    <x-lucide-search class="shrink-0 size-4 text-gray-400 dark:text-neutral-500" />
-                </div>
-                <input type="text" wire:model.live.debounce.300ms="search"
-                    placeholder="Cari nama, vmid, atau deskripsi..."
-                    class="h-10 ps-10 pe-4 block w-full border border-gray-200 rounded-lg text-sm focus:border-emerald-600 focus:ring-emerald-600 dark:bg-neutral-900 dark:border-neutral-700 dark:text-neutral-200 dark:placeholder-neutral-500 dark:focus:ring-neutral-600" />
-            </div>
+            <x-nawasara-ui::search-input model="search" placeholder="Cari nama, vmid, atau deskripsi..." />
         </div>
 
         <div wire:ignore data-filter-chips></div>
@@ -94,10 +80,10 @@
         <x-slot:table>
             @forelse ($this->vms as $vm)
                 <tr wire:key="vm-{{ $vm->id }}">
-                    <td class="px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-600 dark:text-neutral-400">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-600 dark:text-neutral-400">
                         {{ $vm->vmid }}
                     </td>
-                    <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-neutral-200">
+                    <td class="px-6 py-4 text-sm font-medium text-gray-800 dark:text-neutral-200">
                         <div class="flex items-center gap-2">
                             <span>{{ $vm->name ?? '—' }}</span>
                             @if ($vm->template)
@@ -110,17 +96,17 @@
                             @endif
                         </div>
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs">
                         @if ($vm->vm_type === 'qemu')
                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">VM</span>
                         @else
                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">LXC</span>
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-600 dark:text-neutral-400">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-600 dark:text-neutral-400">
                         {{ $vm->node_name }}
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
                         @php $lc = $this->lifecycleJobs[$vm->id] ?? null; @endphp
                         @if ($lc && in_array($lc->status, ['queued', 'running']))
                             {{-- In-flight lifecycle action takes priority over the VM's
@@ -153,13 +139,13 @@
                             </x-nawasara-ui::badge>
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
                         {{ $vm->cpu_count ?? '—' }}
                         @if ($vm->cpu_usage !== null && $vm->isRunning())
                             <span class="text-gray-400">({{ round($vm->cpu_usage * 100, 1) }}%)</span>
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
                         @if ($vm->mem_total)
                             {{ number_format($vm->mem_total / 1024 / 1024 / 1024, 1) }}G
                             @if ($vm->isRunning() && $vm->memUsagePercent() !== null)
@@ -169,14 +155,14 @@
                             —
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
                         @if ($vm->disk_total)
                             {{ number_format($vm->disk_total / 1024 / 1024 / 1024, 0) }}G
                         @else
                             —
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-neutral-500">
+                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500 dark:text-neutral-500">
                         @if ($vm->uptime && $vm->isRunning())
                             @php
                                 $d = floor($vm->uptime / 86400);
@@ -187,7 +173,7 @@
                             —
                         @endif
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                         @php
                             $items = [
                                 ['type' => 'click', 'label' => 'Detail', 'wire:click' => 'openDetail('.$vm->id.')', 'modal' => 'proxmox-vm-detail', 'icon' => 'lucide-eye', 'permission' => 'proxmox.vm.view'],
@@ -601,7 +587,7 @@
 
             {{-- Log lines from Proxmox task log --}}
             <div class="rounded-lg border border-gray-200 dark:border-neutral-700 bg-gray-900 dark:bg-black/40 max-h-96 overflow-auto">
-                <pre class="px-4 py-3 text-[11px] leading-relaxed font-mono text-green-300 whitespace-pre-wrap break-all">@forelse ($this->logLines as $line)<span class="text-neutral-500">{{ str_pad((string) ($line['n'] ?? ''), 4, ' ', STR_PAD_LEFT) }}</span>  {{ $line['t'] ?? '' }}
+                <pre class="px-6 py-4 text-[11px] leading-relaxed font-mono text-green-300 whitespace-pre-wrap break-all">@forelse ($this->logLines as $line)<span class="text-neutral-500">{{ str_pad((string) ($line['n'] ?? ''), 4, ' ', STR_PAD_LEFT) }}</span>  {{ $line['t'] ?? '' }}
 @empty
 <span class="text-neutral-500">(belum ada log — task mungkin masih queued, atau UPID tidak tersedia.)</span>
 @endforelse</pre>
