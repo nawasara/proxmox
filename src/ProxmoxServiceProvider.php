@@ -16,7 +16,10 @@ class ProxmoxServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'nawasara-proxmox');
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-        Blade::anonymousComponentPath(__DIR__.'/../resources/views/components', 'nawasara-proxmox');
+        // Guarded — Laravel's view:cache crashes on missing registered paths.
+        if (is_dir(__DIR__.'/../resources/views/components')) {
+            Blade::anonymousComponentPath(__DIR__.'/../resources/views/components', 'nawasara-proxmox');
+        }
         $this->registerLivewire();
     }
 
