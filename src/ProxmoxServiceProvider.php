@@ -2,10 +2,12 @@
 
 namespace Nawasara\Proxmox;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Nawasara\Proxmox\Console\Commands\SyncCommand;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Symfony\Component\Finder\Finder;
 
@@ -13,6 +15,13 @@ class ProxmoxServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        // Commands didaftarkan duluan — sebelum operasi lain yang mungkin gagal.
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                SyncCommand::class,
+            ]);
+        }
+
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'nawasara-proxmox');
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
@@ -21,6 +30,30 @@ class ProxmoxServiceProvider extends ServiceProvider
             Blade::anonymousComponentPath(__DIR__.'/../resources/views/components', 'nawasara-proxmox');
         }
         $this->registerLivewire();
+
+        $this->app->booted(function () {
+            if (! $this->app->runningInConsole()) {
+                return;
+            }
+
+            // Skip kalau scheduler dimatikan — mis. deployment tanpa
+            // kredensial Proxmox, di mana task ini cuma akan gagal tiap run.
+            if (! config('nawasara-proxmox.scheduler.enabled', true)) {
+                return;
+            }
+
+            $schedule = $this->app->make(Schedule::class);
+
+            // Sync nodes + VMs tiap `sync_interval` menit (default 15).
+            // VM/node list relatif stabil — interval ini cukup untuk
+            // dashboard yang fresh tanpa membanjiri Proxmox API.
+            $interval = max(1, (int) config('nawasara-proxmox.sync_interval', 15));
+
+            $schedule->command('proxmox:sync')
+                ->cron("*/{$interval} * * * *")
+                ->withoutOverlapping(10)
+                ->runInBackground();
+        });
     }
 
     public function register(): void
