@@ -8,6 +8,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Nawasara\Proxmox\Console\Commands\SyncCommand;
+use Nawasara\Proxmox\Jobs\SyncProxmoxNodesJob;
+use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Symfony\Component\Finder\Finder;
 
@@ -47,12 +49,23 @@ class ProxmoxServiceProvider extends ServiceProvider
             // Sync nodes + VMs tiap `sync_interval` menit (default 15).
             // VM/node list relatif stabil — interval ini cukup untuk
             // dashboard yang fresh tanpa membanjiri Proxmox API.
+            //
+            // Dispatch job langsung lewat $schedule->call() — TIDAK lewat
+            // $schedule->command('proxmox:sync'). Console command yang
+            // didaftarkan via $this->commands() tidak selalu surface di
+            // Artisan kernel (paket yang boot belakangan), jadi
+            // $schedule->command() bisa gagal "namespace not defined".
+            // $schedule->call() jalan di proses scheduler sendiri — tidak
+            // butuh command terdaftar.
             $interval = max(1, (int) config('nawasara-proxmox.sync_interval', 15));
 
-            $schedule->command('proxmox:sync')
+            $schedule->call(function () {
+                SyncProxmoxNodesJob::dispatch(triggerSource: 'scheduled');
+                SyncProxmoxVmsJob::dispatch(triggerSource: 'scheduled');
+            })
+                ->name('nawasara-proxmox:sync')
                 ->cron("*/{$interval} * * * *")
-                ->withoutOverlapping(10)
-                ->runInBackground();
+                ->withoutOverlapping(10);
         });
     }
 
