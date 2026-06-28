@@ -56,6 +56,8 @@ class Table extends Component
     #[Url(except: 'hide')]
     public string $templateFilter = 'hide'; // default sembunyikan template
 
+    // #[Url] so the command palette can deep-link ?search=<term> and prefill.
+    #[Url(except: '')]
     public string $search = '';
     public int $perPage = 50;
 
