@@ -5,8 +5,9 @@ $prefix = 'nawasara-proxmox';
 return [
     [
         'workspace' => 'proxmox',
-        'label' => 'Proxmox VE',
+        'label' => 'Proxmox',
         'icon' => 'lucide-server',
+        'group' => 'Observability',
         'url' => '',
         'permission' => 'proxmox.vm.view',
         'submenu' => [
