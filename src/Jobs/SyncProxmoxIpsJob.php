@@ -60,6 +60,17 @@ class SyncProxmoxIpsJob extends AbstractSyncJob
         $subnets = $this->syncSubnets($client);
         $parser = new NetworkConfigParser();
 
+        // Kumpulkan dulu SELURUH config, karena sebagian subnet hanya
+        // terlihat dari alamat VM-nya.
+        $configs = [];
+
+        foreach (ProxmoxVm::all() as $vm) {
+            $cfg = $client->getVmConfig($vm->node_name, $vm->vmid, $vm->vm_type);
+            $configs[] = [$vm, $cfg];
+        }
+
+        $subnets = $this->addSubnetsFromVms($subnets, $parser, $configs);
+
         $stats = [
             'subnets' => count($subnets),
             'ip_tercatat' => 0,
@@ -70,9 +81,7 @@ class SyncProxmoxIpsJob extends AbstractSyncJob
         $ipTerlihat = [];
         $nicTerlihat = [];
 
-        foreach (ProxmoxVm::all() as $vm) {
-            $config = $client->getVmConfig($vm->node_name, $vm->vmid, $vm->vm_type);
-
+        foreach ($configs as [$vm, $config]) {
             if ($config === null) {
                 // Satu VM yang tidak terbaca tidak boleh menggagalkan seluruh
                 // inventori — sisanya tetap berguna.
@@ -212,6 +221,60 @@ class SyncProxmoxIpsJob extends AbstractSyncJob
         return $hasil;
     }
 
+    /**
+     * Menambah subnet yang HANYA terlihat dari alamat VM.
+     *
+     * Sebuah bridge tidak muncul di `/nodes/{node}/network` bila node itu
+     * sendiri tidak punya alamat di sana — node cuma menjembatani lalu
+     * lintasnya. Di Ponorogo `10.1.1.0/24` persis begitu: tiga belas alamat
+     * terpakai, tetapi tidak satu node pun beralamat di sana, sehingga
+     * seluruhnya menggantung tanpa kolam dan tidak dapat dihitung sisanya.
+     *
+     * Prefiksnya diambil dari alamat VM-nya sendiri (`ip=10.1.1.22/24`), jadi
+     * tetap dibaca, bukan ditebak.
+     *
+     * @param  array<int,ProxmoxSubnet>  $subnets
+     * @param  array<int,array{0:ProxmoxVm,1:?array}>  $configs
+     * @return array<int,ProxmoxSubnet>
+     */
+    protected function addSubnetsFromVms(array $subnets, NetworkConfigParser $parser, array $configs): array
+    {
+        foreach ($configs as [$vm, $config]) {
+            if ($config === null) {
+                continue;
+            }
+
+            foreach ($parser->parse($config) as $nic) {
+                foreach ($nic['ips'] as $addr) {
+                    // Sudah tercakup subnet yang dibaca dari node — biarkan
+                    // yang itu, karena ia membawa gateway juga.
+                    if ($this->subnetFor($subnets, $addr['ip']) !== null) {
+                        continue;
+                    }
+
+                    $network = $this->networkCidr($addr['ip'].'/'.$addr['prefix']);
+
+                    if ($network === null) {
+                        continue;
+                    }
+
+                    $subnet = ProxmoxSubnet::updateOrCreate(
+                        ['cidr' => $network],
+                        [
+                            'bridge' => $nic['bridge'],
+                            'gateway' => $nic['gateway'],
+                            'is_public' => $this->isPublic(explode('/', $network)[0]),
+                        ],
+                    );
+
+                    $subnets[$subnet->id] = $subnet;
+                }
+            }
+        }
+
+        return $subnets;
+    }
+
     /** `111.1.1.13/24` menjadi `111.1.1.0/24`. */
     protected function networkCidr(string $cidr): ?string
     {
@@ -236,14 +299,37 @@ class SyncProxmoxIpsJob extends AbstractSyncJob
         return $long === false ? 24 : substr_count(decbin($long), '1');
     }
 
-    /** RFC1918 dan sejenisnya dianggap privat; selebihnya publik. */
+    /**
+     * Apakah subnet ini benar-benar dapat dijangkau dari luar?
+     *
+     * ⚠️ **RFC1918 saja TIDAK cukup di sini.** `111.1.1.0/24` adalah jaringan
+     * internal Ponorogo tetapi bukan alamat privat menurut RFC1918, sehingga
+     * pemeriksaan bawaan PHP menandainya "publik" — dan penandaan itu keliru
+     * dengan cara yang berbahaya: kartu publik ditampilkan lebih dulu justru
+     * karena dianggap langka, padahal 244 alamatnya menganggur.
+     *
+     * Daftar tambahan di bawah karena itu dapat disetel; nilai bawaannya
+     * adalah rentang yang sudah diketahui internal di sini.
+     */
     protected function isPublic(string $ip): bool
     {
-        return filter_var(
+        $rfc1918 = filter_var(
             $ip,
             FILTER_VALIDATE_IP,
             FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
-        ) !== false;
+        ) === false;
+
+        if ($rfc1918) {
+            return false;
+        }
+
+        foreach ((array) config('nawasara-proxmox.internal_prefixes', []) as $prefix) {
+            if (str_starts_with($ip, (string) $prefix)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param  array<int,ProxmoxSubnet>  $subnets */
