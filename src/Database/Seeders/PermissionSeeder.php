@@ -17,6 +17,12 @@ class PermissionSeeder extends Seeder
             'proxmox.vm.snapshot',    // create / rollback / delete snapshot — Phase 3
             'proxmox.vm.console',     // generate noVNC ticket — Phase 2
             'proxmox.sync.execute',
+
+            // Inventori IP. `edit` dipisah dari `view` karena mengisi alamat
+            // secara manual adalah menyatakan sesuatu yang tidak diketahui
+            // Proxmox — isian yang keliru menuntun orang ke bentrok alamat.
+            'proxmox.ip.view',
+            'proxmox.ip.edit',
         ];
 
         foreach ($permissions as $permission) {

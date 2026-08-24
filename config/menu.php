@@ -25,6 +25,13 @@ return [
                 'permission' => 'proxmox.node.view',
                 'navigate' => true,
             ],
+            [
+                'label' => 'Inventori IP',
+                'icon' => 'lucide-network',
+                'url' => url($prefix.'/ip-inventory'),
+                'permission' => 'proxmox.ip.view',
+                'navigate' => true,
+            ],
         ],
     ],
 ];

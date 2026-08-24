@@ -93,6 +93,24 @@ class ProxmoxClient
     /**
      * GET VM/container current status (lebih lengkap dari cluster resources).
      */
+    /**
+     * GET /nodes/{node}/network → daftar antarmuka node, termasuk bridge.
+     *
+     * Inilah sumber peta subnet yang SUNGGUHAN. Prefiksnya wajib dibaca dari
+     * sini, bukan ditebak: `vmbr0` di Ponorogo adalah /27 (30 alamat), dan
+     * menganggapnya /24 akan menyarankan 224 alamat yang tidak pernah ada.
+     *
+     * Tiap entri bridge memuat: { iface, type, cidr|address, netmask, gateway }
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function getNodeNetwork(string $node): array
+    {
+        $r = $this->api()->get("/nodes/{$node}/network");
+
+        return $r->successful() ? (array) $r->json('data') : [];
+    }
+
     public function getVmStatus(string $node, int $vmid, string $type = 'qemu'): ?array
     {
         $type = $type === 'lxc' ? 'lxc' : 'qemu';

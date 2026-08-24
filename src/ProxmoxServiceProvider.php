@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Nawasara\Proxmox\Console\Commands\SyncCommand;
+use Nawasara\Proxmox\Jobs\SyncProxmoxIpsJob;
 use Nawasara\Proxmox\Jobs\SyncProxmoxNodesJob;
 use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
 use Nawasara\Proxmox\Services\ProxmoxClient;
@@ -66,6 +67,20 @@ class ProxmoxServiceProvider extends ServiceProvider
                 ->name('nawasara-proxmox:sync')
                 ->cron("*/{$interval} * * * *")
                 ->withoutOverlapping(10);
+
+            // Inventori IP dijadwalkan TERPISAH dan jauh lebih jarang.
+            //
+            // Ia memanggil /config sekali per VM — puluhan permintaan tiap
+            // putaran, berbeda dari sinkronisasi di atas yang cukup satu
+            // panggilan /cluster/resources. Alamat IP pun nyaris tidak
+            // pernah berubah tanpa ada yang mengubahnya, jadi memindainya
+            // tiap 15 menit hanya membebani Proxmox tanpa hasil baru.
+            $ipInterval = max(1, (int) config('nawasara-proxmox.ip_sync_interval_hours', 6));
+
+            $schedule->call(fn () => SyncProxmoxIpsJob::dispatch(triggerSource: 'scheduled'))
+                ->name('nawasara-proxmox:sync-ips')
+                ->cron("0 */{$ipInterval} * * *")
+                ->withoutOverlapping(30);
         });
     }
 
