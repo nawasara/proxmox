@@ -35,6 +35,7 @@
                 description="Ubah kata kunci atau saringannya." />
         @else
             <x-nawasara-ui::table :headers="['IP', 'VM', 'Node', 'NIC', 'MAC', 'Subnet', 'Asal']">
+                <x-slot:table>
                 @foreach ($this->rows as $row)
                     <tr wire:key="ip-{{ $row->id }}">
                         <td class="px-4 py-2.5">
@@ -86,6 +87,7 @@
                         </td>
                     </tr>
                 @endforeach
+                </x-slot:table>
             </x-nawasara-ui::table>
 
             <div class="mt-4">

@@ -22,6 +22,7 @@
                 description="Angka alamat bebas kini dapat dipercaya sepenuhnya." />
         @else
             <x-nawasara-ui::table :headers="['VM', 'Node', 'NIC', 'MAC', 'Bridge', 'Subnet biasanya', '']">
+                <x-slot:table>
                 @foreach ($this->nics as $nic)
                     <tr wire:key="nic-{{ $nic->id }}">
                         <td class="px-4 py-2.5">
@@ -60,6 +61,7 @@
                         </td>
                     </tr>
                 @endforeach
+                </x-slot:table>
             </x-nawasara-ui::table>
         @endif
     </x-nawasara-ui::page.card>
