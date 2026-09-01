@@ -23,6 +23,40 @@ Proxmox VE management for the Nawasara superapp framework — VM and LXC invento
 
 The package follows the DB-cache + queue pattern from `nawasara/sync`: reads come from local snapshot tables; writes dispatch queue jobs that hit the Proxmox API and update the snapshot via content-hash diffing.
 
+## Capacity alerts
+
+Runs hourly (`nawasara-proxmox:check-capacity`) and warns before a disk fills
+up. Added after the production database went down because its disk was full —
+with no warning at all. The data had been syncing every 15 minutes for months;
+nothing was reading it and saying "this is about to become a problem."
+
+Fires only when **both** hold: usage is past the threshold **and** the free
+space left is genuinely small (default 20 GB). Percentage alone misleads on
+large disks — one production machine sits at 84.6% with 151 GB free, and an
+alert that fires when nothing needs doing is the fastest way to teach people
+to ignore it.
+
+Resolves itself once space frees up, so a badge that stays lit never buries
+the alert that is actually new.
+
+### ⚠️ QEMU VMs are not covered
+
+Proxmox only reports in-guest disk usage for **LXC**. For QEMU the API returns
+**0** unless `qemu-guest-agent` is installed — and in Ponorogo all 20 QEMU VMs
+report 0.
+
+Those machines are **skipped, not treated as 0%**. Treating them as empty would
+paint the dashboard green for machines whose state is simply unknown, which is
+the same false confidence that let the outage through. The skipped count is
+logged every run so the gap stays visible.
+
+Install the guest agent inside a VM and it joins the check automatically.
+
+Thresholds are `.env`-tunable: `PROXMOX_DISK_WARNING`, `PROXMOX_DISK_CRITICAL`,
+`PROXMOX_DISK_MIN_FREE_GB`, `PROXMOX_MEM_WARNING`, `PROXMOX_MEM_CRITICAL`.
+
+Guide (Indonesian): [`docs/panduan/pemantauan-kapasitas.md`](../../docs/panduan/pemantauan-kapasitas.md)
+
 ## Installation
 
 ```bash

@@ -16,7 +16,7 @@ class NetworkConfigParserTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->parser = new NetworkConfigParser();
+        $this->parser = new NetworkConfigParser;
     }
 
     public function test_lxc_memberi_ip_publik_dan_lokal(): void

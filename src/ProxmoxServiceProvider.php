@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Nawasara\Proxmox\Console\Commands\SyncCommand;
+use Nawasara\Proxmox\Jobs\CheckCapacityJob;
 use Nawasara\Proxmox\Jobs\SyncProxmoxIpsJob;
 use Nawasara\Proxmox\Jobs\SyncProxmoxNodesJob;
 use Nawasara\Proxmox\Jobs\SyncProxmoxVmsJob;
@@ -81,6 +82,17 @@ class ProxmoxServiceProvider extends ServiceProvider
                 ->name('nawasara-proxmox:sync-ips')
                 ->cron("0 */{$ipInterval} * * *")
                 ->withoutOverlapping(30);
+
+            // Pemeriksaan kapasitas — tiap jam, bukan tiap 15 menit.
+            //
+            // Disk tidak terisi mendadak; yang dibutuhkan adalah tahu beberapa
+            // HARI sebelumnya, bukan beberapa menit. Tiap jam sudah memberi 24
+            // kesempatan memperingatkan sebelum sehari berlalu, tanpa membuat
+            // pemeriksaannya sendiri jadi beban.
+            $schedule->call(fn () => CheckCapacityJob::dispatch())
+                ->name('nawasara-proxmox:check-capacity')
+                ->hourly()
+                ->withoutOverlapping(10);
         });
     }
 

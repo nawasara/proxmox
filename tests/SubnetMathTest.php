@@ -16,7 +16,7 @@ class SubnetMathTest extends TestCase
 {
     private function subnet(string $cidr, ?string $gateway = null, ?array $reserved = null): ProxmoxSubnet
     {
-        $s = new ProxmoxSubnet();
+        $s = new ProxmoxSubnet;
         $s->cidr = $cidr;
         $s->gateway = $gateway;
         $s->reserved_ranges = $reserved;
