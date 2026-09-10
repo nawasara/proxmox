@@ -11,6 +11,8 @@ use Nawasara\Proxmox\Jobs\Vm\AbstractProxmoxVmJob;
 use Nawasara\Proxmox\Models\ProxmoxNode;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Repositories\ProxmoxVmRepository;
+use Nawasara\AuthPrimitives\Attributes\RequiresSudo;
+use Nawasara\AuthPrimitives\Traits\WithSudo;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Nawasara\Sync\Models\SyncJob;
 use Nawasara\Ui\Livewire\Concerns\HasArrayFilters;
@@ -23,6 +25,7 @@ class Table extends Component
     use HasBrowserToast;
     use HasExport;
     use WithPagination;
+    use WithSudo;
 
     /**
      * Multi-select filters using filter-panel array semantics.
@@ -181,6 +184,76 @@ class Table extends Component
         }
 
         $this->toastSuccess(ucfirst($action)." VM #{$vm->vmid} ({$vm->name}) telah dijadwalkan.");
+    }
+
+    /**
+     * Buka console teks di tab baru.
+     *
+     * Menerbitkan tiket termproxy lewat kredensial sesi di Vault, menyimpan
+     * info sambungannya di cache dengan kunci acak, lalu menyuruh browser
+     * membuka halaman console dengan kunci itu.
+     *
+     * ⚠️ Alamat websocket TIDAK dikirim ke browser lewat URL — ia memuat tiket
+     * yang setara kunci masuk, dan URL tersimpan di riwayat peramban serta log
+     * akses. Kunci cache acak membuat URL-nya tidak berarti apa-apa bila bocor.
+     *
+     * Digerbang sudo: ini membuka shell pada mesin produksi. Tidak seperti
+     * memulai atau menghentikan VM yang akibatnya terlihat dan dapat
+     * dikembalikan, apa yang diketik seseorang di dalam shell tidak
+     * meninggalkan jejak di Nawasara sama sekali.
+     */
+    #[RequiresSudo(reason: 'membuka console VM')]
+    public function openConsole(int $id): void
+    {
+        Gate::authorize('proxmox.vm.console');
+
+        $vm = ProxmoxVm::find($id);
+        if (! $vm) {
+            $this->toastError('VM tidak ditemukan.');
+            return;
+        }
+
+        $client = app(ProxmoxClient::class);
+
+        if (! $client->hasConsoleCredentials()) {
+            // Pesan menyebut APA yang harus diisi dan DI MANA. Tanpa itu,
+            // kegagalan ini terbaca sebagai kerusakan, bukan penyiapan yang
+            // belum selesai.
+            $this->toastError('Console belum tersedia — isi Console User & Password pada Vault → Proxmox VE.');
+            return;
+        }
+
+        $tiket = $client->createTermTicket($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+
+        if (! $tiket || empty($tiket['ticket']) || empty($tiket['port'])) {
+            $this->toastError('Proxmox menolak menerbitkan tiket console. Periksa kredensial console di Vault.');
+            return;
+        }
+
+        $wsUrl = $client->termWebSocketUrl(
+            $vm->node_name,
+            (int) $vm->vmid,
+            $vm->vm_type,
+            (int) $tiket['port'],
+            (string) $tiket['ticket'],
+        );
+
+        $kunci = bin2hex(random_bytes(16));
+
+        // TTL 60 detik: cukup untuk browser membuka tab, jauh dari cukup untuk
+        // dipungut orang lain. Tiket termproxy Proxmox sendiri juga berumur
+        // pendek, jadi menyimpannya lebih lama tidak ada gunanya.
+        \Illuminate\Support\Facades\Cache::put('proxmox:console:'.$kunci, [
+            'user_id' => auth()->id(),
+            'ws_url' => $wsUrl,
+            'session_ticket' => $tiket['session_ticket'] ?? '',
+            'vm_name' => $vm->name,
+            'node' => $vm->node_name,
+            'vmid' => (int) $vm->vmid,
+            'type' => $vm->vm_type,
+        ], 60);
+
+        $this->dispatch('proxmox-console-open', url: route('nawasara-proxmox.console', $kunci));
     }
 
     public function openDetail(int $id): void
@@ -477,16 +550,35 @@ class Table extends Component
     }
 
     /**
-     * Pre-built console URLs per row, so the dropdown can open them as a
-     * normal link (target=_blank). Computed once per render.
+     * Tautan ke UI Proxmox per baris, dibuka sebagai tautan biasa (_blank).
+     *
+     * ⚠️ TIDAK membawa autentikasi. Bagi yang belum masuk ke Proxmox di tab
+     * lain, halaman ini menjawab "401 permission denied - invalid PVE ticket",
+     * dan itu bukan gangguan sesaat: tidak ada tiket yang pernah dikirim.
+     *
+     * Console yang bekerja tanpa akun Proxmox ada di halaman Console Nawasara
+     * sendiri — lihat ProxmoxClient::createVncTicket().
      */
+    /**
+     * Kredensial console sudah diisi di Vault.
+     *
+     * Menyembunyikan menu Console bila belum, supaya tidak ada tombol yang
+     * pasti gagal saat ditekan — kegagalan seperti itu terbaca sebagai
+     * kerusakan, bukan sebagai penyiapan yang belum selesai.
+     */
+    #[Computed]
+    public function consoleAvailable(): bool
+    {
+        return app(ProxmoxClient::class)->hasConsoleCredentials();
+    }
+
     #[Computed]
     public function consoleUrls(): array
     {
         $client = app(ProxmoxClient::class);
         $out = [];
         foreach ($this->vms as $vm) {
-            $out[$vm->id] = $client->consoleUrl($vm->node_name, (int) $vm->vmid, $vm->vm_type, $vm->name);
+            $out[$vm->id] = $client->proxmoxUiUrl($vm->node_name, (int) $vm->vmid, $vm->vm_type, $vm->name);
         }
         return $out;
     }

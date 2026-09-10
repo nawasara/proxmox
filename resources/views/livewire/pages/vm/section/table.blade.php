@@ -1,4 +1,13 @@
 <div @if ($this->hasPendingActions) wire:poll.4s @elseif ($detailId) wire:poll.10s @endif>
+
+    {{-- Membuka tab console.
+         Tab dibuka dari peristiwa Livewire, BUKAN dari tautan biasa, karena
+         URL-nya baru ada setelah server menerbitkan tiket. Sebagian peramban
+         memblokir window.open yang tidak berasal dari klik; di sini masih
+         terhitung berasal darinya karena peristiwa tiba pada rangkaian
+         penanganan klik yang sama. --}}
+    <div x-data
+         x-on:proxmox-console-open.window="window.open($event.detail.url, '_blank', 'noopener')"></div>
     @php
         $statusOptions = ['running' => 'Running', 'stopped' => 'Stopped', 'paused' => 'Paused'];
         $typeOptions = ['qemu' => 'VM (qemu)', 'lxc' => 'Container (LXC)'];
@@ -186,8 +195,21 @@
                                     $items[] = ['type' => 'click', 'label' => 'Restart', 'wire:click' => "vmAction({$vm->id}, 'restart')", 'icon' => 'lucide-rotate-cw', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Reboot VM {$vm->name} (#{$vm->vmid})?\n\nGuest agent atau init container harus aktif untuk reboot graceful."];
                                     $items[] = ['type' => 'click', 'label' => 'Shutdown', 'wire:click' => "vmAction({$vm->id}, 'shutdown')", 'icon' => 'lucide-power', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Graceful shutdown VM {$vm->name} (#{$vm->vmid})?\n\nSama seperti tekan tombol power di komputer fisik."];
                                     $items[] = ['type' => 'click', 'label' => 'Stop (force)', 'wire:click' => "vmAction({$vm->id}, 'stop')", 'icon' => 'lucide-square', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "FORCE STOP VM {$vm->name} (#{$vm->vmid})?\n\nIni akan memutus power tanpa shutdown graceful — data yg belum di-flush bisa hilang. Pakai opsi Shutdown jika memungkinkan."];
+                                    // Console teks Nawasara — terminal xterm.js di
+                                    // tab baru, tanpa perlu akun Proxmox. Hanya
+                                    // muncul bila kredensial console sudah diisi
+                                    // di Vault, supaya tidak ada tombol yang pasti
+                                    // gagal saat ditekan.
+                                    if ($this->consoleAvailable) {
+                                        $items[] = ['type' => 'click', 'label' => 'Console', 'wire:click' => "openConsole({$vm->id})", 'icon' => 'lucide-terminal', 'permission' => 'proxmox.vm.console'];
+                                    }
+
+                                    // Tautan ke UI Proxmox — TIDAK membawa
+                                    // autentikasi. Berguna hanya bagi admin yang
+                                    // memang sudah masuk ke Proxmox di tab lain;
+                                    // bagi yang lain halaman itu menjawab 401.
                                     if (! empty($this->consoleUrls[$vm->id])) {
-                                        $items[] = ['type' => 'href', 'label' => 'Buka Console', 'href' => $this->consoleUrls[$vm->id], 'target' => '_blank', 'icon' => 'lucide-terminal', 'permission' => 'proxmox.vm.console'];
+                                        $items[] = ['type' => 'href', 'label' => 'Buka di Proxmox', 'href' => $this->consoleUrls[$vm->id], 'target' => '_blank', 'icon' => 'lucide-external-link', 'permission' => 'proxmox.vm.console'];
                                     }
                                 }
                                 if ($lc) {

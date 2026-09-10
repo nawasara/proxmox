@@ -157,17 +157,17 @@ class ProxmoxClient
     }
 
     /**
-     * Build a deep link into the Proxmox web UI's noVNC console for a VM.
+     * ⚠️ Tautan ke UI Proxmox — TIDAK membawa autentikasi apa pun.
      *
-     * Proxmox issues vncproxy tickets bound to a session cookie, so a token
-     * issued via API can't be injected into a separate browser. The pragmatic
-     * UX: just open the existing PVE web console in a new tab — admins are
-     * already authenticated there with their own credentials.
+     * Dipertahankan hanya sebagai jalan cadangan bagi admin yang memang sudah
+     * masuk ke Proxmox di tab lain. Bagi orang lain, halaman ini menjawab
+     * "401 permission denied - invalid PVE ticket", dan itu bukan galat
+     * sementara: tidak ada tiket yang pernah dikirim.
      *
-     * Format: {host}/?console=kvm&novnc=1&node={n}&vmid={id}&resize=scale
-     * For LXC the console kind is `lxc` instead of `kvm`.
+     * Untuk console yang benar-benar bekerja tanpa akun Proxmox, pakai
+     * openVncConsole() — Nawasara yang menerbitkan tiketnya.
      */
-    public function consoleUrl(string $node, int $vmid, string $type = 'qemu', ?string $vmName = null): ?string
+    public function proxmoxUiUrl(string $node, int $vmid, string $type = 'qemu', ?string $vmName = null): ?string
     {
         $host = (string) Vault::get('proxmox', 'host');
         if (! $host) {
@@ -186,6 +186,242 @@ class ProxmoxClient
         ]);
 
         return rtrim($host, '/').'/?'.$params;
+    }
+
+    /**
+     * POST /nodes/{node}/{type}/{vmid}/vncproxy — terbitkan tiket console.
+     *
+     * Inilah yang membuat console dapat dibuka TANPA akun Proxmox per orang:
+     * Nawasara meminta tiket memakai API token miliknya sendiri, lalu
+     * menyajikan noVNC dari halamannya sendiri. Siapa yang boleh membukanya
+     * ditentukan permission Nawasara (`proxmox.vm.console`), bukan daftar user
+     * di Proxmox.
+     *
+     * Mengembalikan { ticket, port, cert, user, upid } atau null.
+     *
+     * ⚠️ Tiketnya berumur pendek (kira-kira 30 detik untuk dipakai) dan sekali
+     * pakai. Jangan disimpan, jangan dicache — terbitkan tepat saat console
+     * dibuka.
+     *
+     * `websocket => 1` wajib: tanpanya Proxmox menyiapkan sambungan VNC mentah
+     * yang tidak dapat dihubungi dari browser.
+     */
+    public function createVncTicket(string $node, int $vmid, string $type = 'qemu'): ?array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+
+        $r = $this->api()->post("/nodes/{$node}/{$type}/{$vmid}/vncproxy", [
+            'websocket' => 1,
+        ]);
+
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * Alamat WebSocket yang disambungi noVNC di browser.
+     *
+     * Skema wss:// karena Proxmox selalu melayani lewat TLS. Port dan tiket
+     * berasal dari createVncTicket() dan hanya berlaku untuk satu sambungan.
+     */
+    public function vncWebSocketUrl(string $node, int $vmid, string $type, int $port, string $ticket): ?string
+    {
+        $host = (string) Vault::get('proxmox', 'host');
+        if (! $host) {
+            return null;
+        }
+
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+        $base = preg_replace('#^https?://#', '', rtrim($host, '/'));
+
+        $params = http_build_query([
+            'port' => $port,
+            'vncticket' => $ticket,
+        ]);
+
+        return "wss://{$base}/api2/json/nodes/{$node}/{$type}/{$vmid}/vncwebsocket?".$params;
+    }
+
+    /**
+     * Console teks tersedia bila kredensial sesi sudah diisi di Vault.
+     *
+     * Dipakai antarmuka untuk memutuskan apakah menu "Console" ditampilkan,
+     * sehingga orang tidak menekan tombol yang pasti gagal.
+     */
+    public function hasConsoleCredentials(): bool
+    {
+        // Kata sandi yang menentukan. Nama pengguna punya nilai bawaan karena
+        // hampir selalu root@pam, dan placeholder di formulir Vault menampilkan
+        // teks itu tanpa mengirimkannya — sehingga orang wajar mengira kotaknya
+        // sudah terisi, lalu console diam-diam tidak pernah menyala.
+        return ! empty(Vault::get('proxmox', 'console_password'));
+    }
+
+    /** Nama pengguna untuk tiket sesi; root@pam bila tidak diisi. */
+    protected function consoleUser(): string
+    {
+        $user = trim((string) Vault::get('proxmox', 'console_user'));
+
+        return $user !== '' ? $user : 'root@pam';
+    }
+
+    /**
+     * POST /access/ticket — tiket sesi PVE.
+     *
+     * ⚠️ HANYA menerima username + kata sandi. API token DITOLAK di sini
+     * (401 authentication failure) — sudah diuji terhadap PVE 8.4.16, dan itu
+     * memang disengaja Proxmox, bukan salah konfigurasi.
+     *
+     * Tiket inilah yang membedakan console teks dari fitur lain di paket ini:
+     * segala hal lain berjalan dengan API token; hanya termproxy yang tidak.
+     *
+     * Mengembalikan { ticket, CSRFPreventionToken, username } atau null.
+     */
+    public function createSessionTicket(): ?array
+    {
+        $user = $this->consoleUser();
+        $pass = (string) Vault::get('proxmox', 'console_password');
+
+        if ($pass === '') {
+            return null;
+        }
+
+        $host = rtrim((string) Vault::get('proxmox', 'host'), '/');
+        $verifySsl = Vault::get('proxmox', 'verify_ssl');
+        $verify = ! in_array(strtolower((string) $verifySsl), ['false', '0', 'no', ''], true);
+
+        // Tanpa header PVEAPIToken — endpoint ini justru menolaknya.
+        $req = Http::timeout((int) config('nawasara-proxmox.request_timeout', 15))
+            ->acceptJson();
+
+        if (! $verify) {
+            $req = $req->withoutVerifying();
+        }
+
+        $r = $req->post($host.'/api2/json/access/ticket', [
+            'username' => $user,
+            'password' => $pass,
+        ]);
+
+        return $r->successful() ? $r->json('data') : null;
+    }
+
+    /**
+     * POST termproxy — tiket console TEKS.
+     *
+     * `$vmid` null berarti shell node itu sendiri, bukan salah satu tamunya.
+     *
+     * ⚠️ Menuntut tiket sesi sebagai cookie. Dipanggil dengan API token,
+     * Proxmox 8.4 menjawab 500 `Not a HASH reference` — galat yang menyesatkan
+     * karena terlihat seperti kerusakan server, padahal artinya "kredensial
+     * yang Anda pakai bukan jenis yang saya terima di sini".
+     *
+     * Mengembalikan { ticket, port, user, upid } atau null.
+     */
+    public function createTermTicket(string $node, ?int $vmid = null, string $type = 'qemu'): ?array
+    {
+        $sesi = $this->createSessionTicket();
+
+        if (! $sesi || empty($sesi['ticket'])) {
+            return null;
+        }
+
+        $host = rtrim((string) Vault::get('proxmox', 'host'), '/');
+        $verifySsl = Vault::get('proxmox', 'verify_ssl');
+        $verify = ! in_array(strtolower((string) $verifySsl), ['false', '0', 'no', ''], true);
+
+        $req = Http::timeout((int) config('nawasara-proxmox.request_timeout', 15))
+            ->acceptJson()
+            ->withHeaders([
+                'CSRFPreventionToken' => $sesi['CSRFPreventionToken'] ?? '',
+                'Cookie' => 'PVEAuthCookie='.$sesi['ticket'],
+            ]);
+
+        if (! $verify) {
+            $req = $req->withoutVerifying();
+        }
+
+        $path = $vmid === null
+            ? "/nodes/{$node}/termproxy"
+            : "/nodes/{$node}/".($type === 'lxc' ? 'lxc' : 'qemu')."/{$vmid}/termproxy";
+
+        // ⚠️ WAJIB form-encoded, meski badannya kosong.
+        //
+        // Dengan JSON, PVE::APIServer menjawab 500 `Not a HASH reference` —
+        // galat Perl yang terlihat seperti kerusakan server, padahal artinya
+        // badan permintaannya berbentuk salah. Jebakan yang sama sudah tercatat
+        // di vmAction() pada berkas ini.
+        $r = $req->asForm()->post($host.'/api2/json'.$path, []);
+
+        if (! $r->successful()) {
+            return null;
+        }
+
+        $data = $r->json('data') ?? [];
+
+        // Tiket sesi ikut dikembalikan: browser MEMBUTUHKANNYA sebagai cookie
+        // saat membuka websocket. Tanpa itu, tiket termproxy sendiri tidak
+        // cukup dan sambungan ditolak.
+        $data['session_ticket'] = $sesi['ticket'];
+
+        return $data;
+    }
+
+    /**
+     * Alamat WebSocket untuk console teks.
+     *
+     * Sama seperti VNC, tetapi menuju vncwebsocket dengan port dari termproxy —
+     * Proxmox memakai endpoint websocket yang sama untuk keduanya.
+     */
+    public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket): ?string
+    {
+        $host = (string) Vault::get('proxmox', 'host');
+        if (! $host) {
+            return null;
+        }
+
+        $base = preg_replace('#^https?://#', '', rtrim($host, '/'));
+
+        $path = $vmid === null
+            ? "/api2/json/nodes/{$node}/vncwebsocket"
+            : "/api2/json/nodes/{$node}/".($type === 'lxc' ? 'lxc' : 'qemu')."/{$vmid}/vncwebsocket";
+
+        $params = http_build_query([
+            'port' => $port,
+            'vncticket' => $ticket,
+        ]);
+
+        return "wss://{$base}{$path}?".$params;
+    }
+
+    /**
+     * GET /nodes/{node}/{type}/{vmid}/firewall/rules — aturan firewall satu VM.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getFirewallRules(string $node, int $vmid, string $type = 'qemu'): array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+
+        $r = $this->api()->get("/nodes/{$node}/{$type}/{$vmid}/firewall/rules");
+
+        return $r->successful() ? ($r->json('data') ?? []) : [];
+    }
+
+    /**
+     * GET /nodes/{node}/{type}/{vmid}/firewall/options — status firewall VM.
+     *
+     * Yang paling menentukan adalah `enable`: aturan boleh ada seluruhnya,
+     * tetapi bila firewall VM-nya mati, tidak satu pun berlaku. Menampilkan
+     * daftar aturan tanpa status ini membuat VM tampak terlindungi padahal
+     * tidak.
+     */
+    public function getFirewallOptions(string $node, int $vmid, string $type = 'qemu'): ?array
+    {
+        $type = $type === 'lxc' ? 'lxc' : 'qemu';
+
+        $r = $this->api()->get("/nodes/{$node}/{$type}/{$vmid}/firewall/options");
+
+        return $r->successful() ? $r->json('data') : null;
     }
 
     /**
