@@ -41,6 +41,9 @@
         "livewire/livewire": "^3.0"
     },
     "extra": {
+        "branch-alias": {
+            "dev-main": "0.4.x-dev"
+        },
         "laravel": {
             "providers": [
                 "Nawasara\\Proxmox\\ProxmoxServiceProvider"
