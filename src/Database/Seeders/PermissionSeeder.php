@@ -15,7 +15,8 @@ class PermissionSeeder extends Seeder
             'proxmox.vm.view',
             'proxmox.vm.lifecycle',   // start / stop / restart / shutdown — Phase 2
             'proxmox.vm.snapshot',    // create / rollback / delete snapshot — Phase 3
-            'proxmox.vm.console',     // generate noVNC ticket — Phase 2
+            'proxmox.vm.console',
+            'proxmox.console.history',   // riwayat siapa membuka console VM
             'proxmox.sync.execute',
 
             // Inventori IP. `edit` dipisah dari `view` karena mengisi alamat

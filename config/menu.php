@@ -32,6 +32,13 @@ return [
                 'permission' => 'proxmox.ip.view',
                 'navigate' => true,
             ],
+            [
+                'label' => 'Riwayat Console',
+                'icon' => 'lucide-history',
+                'url' => url($prefix.'/console-history'),
+                'permission' => 'proxmox.console.history',
+                'navigate' => true,
+            ],
         ],
     ],
 ];

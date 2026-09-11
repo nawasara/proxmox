@@ -8,6 +8,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Nawasara\Proxmox\Jobs\Vm\AbstractProxmoxVmJob;
+use Nawasara\Proxmox\Models\ConsoleSession;
 use Nawasara\Proxmox\Models\ProxmoxNode;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Repositories\ProxmoxVmRepository;
@@ -223,9 +224,9 @@ class Table extends Component
             return;
         }
 
-        $tiket = $client->createTermTicket($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+        $ticket = $client->createTermTicket($vm->node_name, (int) $vm->vmid, $vm->vm_type);
 
-        if (! $tiket || empty($tiket['ticket']) || empty($tiket['port'])) {
+        if (! $ticket || empty($ticket['ticket']) || empty($ticket['port'])) {
             $this->toastError('Proxmox menolak menerbitkan tiket console. Periksa kredensial console di Vault.');
             return;
         }
@@ -234,28 +235,49 @@ class Table extends Component
             $vm->node_name,
             (int) $vm->vmid,
             $vm->vm_type,
-            (int) $tiket['port'],
-            (string) $tiket['ticket'],
-            (string) ($tiket['session_ticket'] ?? ''),
+            (int) $ticket['port'],
+            (string) $ticket['ticket'],
+            (string) ($ticket['session_ticket'] ?? ''),
         );
 
-        $kunci = bin2hex(random_bytes(16));
+        // Catat SEBELUM tab dibuka, bukan sesudah. Bila pencatatan gagal,
+        // console tidak boleh terbuka — jejak yang hilang membuat kredensial
+        // bersama ini tidak dapat dipertanggungjawabkan sama sekali.
+        $logEntry = ConsoleSession::create([
+            'user_id' => auth()->id(),
+
+            // Disalin, bukan sekadar direlasikan: akun dapat berganti nama
+            // atau dihapus, dan jejak audit harus tetap terbaca apa adanya.
+            'user_name' => auth()->user()->name,
+            'user_email' => auth()->user()->email,
+
+            'node_name' => $vm->node_name,
+            'vmid' => (int) $vm->vmid,
+            'vm_name' => $vm->name,
+            'vm_type' => $vm->vm_type,
+            'started_at' => now(),
+            'last_seen_at' => now(),
+            'ip_address' => request()->ip(),
+        ]);
+
+        $cacheKey = bin2hex(random_bytes(16));
 
         // TTL 60 detik: cukup untuk browser membuka tab, jauh dari cukup untuk
         // dipungut orang lain. Tiket termproxy Proxmox sendiri juga berumur
         // pendek, jadi menyimpannya lebih lama tidak ada gunanya.
-        \Illuminate\Support\Facades\Cache::put('proxmox:console:'.$kunci, [
+        \Illuminate\Support\Facades\Cache::put('proxmox:console:'.$cacheKey, [
             'user_id' => auth()->id(),
             'ws_url' => $wsUrl,
-            'session_ticket' => $tiket['session_ticket'] ?? '',
-            'console_user' => $tiket['console_user'] ?? 'root@pam',
+            'session_ticket' => $ticket['session_ticket'] ?? '',
+            'console_user' => $ticket['console_user'] ?? 'root@pam',
+            'session_id' => $logEntry->id,
             'vm_name' => $vm->name,
             'node' => $vm->node_name,
             'vmid' => (int) $vm->vmid,
             'type' => $vm->vm_type,
         ], 60);
 
-        $this->dispatch('proxmox-console-open', url: route('nawasara-proxmox.console', $kunci));
+        $this->dispatch('proxmox-console-open', url: route('nawasara-proxmox.console', $cacheKey));
     }
 
     public function openDetail(int $id): void

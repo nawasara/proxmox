@@ -8,6 +8,10 @@
         'sessionTicket' => $sessionTicket,
         'consoleUser' => $consoleUser,
         'vmName' => $vmName,
+        'sessionId' => $sessionId,
+        'heartbeatUrl' => $sessionId ? route('nawasara-proxmox.console.heartbeat', $sessionId) : null,
+        'closeUrl' => $sessionId ? route('nawasara-proxmox.console.close', $sessionId) : null,
+        'csrf' => csrf_token(),
     ];
 @endphp
 <!DOCTYPE html>
@@ -38,6 +42,13 @@
         .bar .rinci { color: #737373; font-size: 12px; }
         .bar .sisa { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
+        .pengguna {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 12px; color: #a3a3a3;
+            padding-right: 12px; border-right: 1px solid #333;
+        }
+        .pengguna .nip { color: #737373; }
+
         .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
         .status::before {
             content: ''; width: 8px; height: 8px; border-radius: 50%;
@@ -63,6 +74,17 @@
         <span class="nama">{{ $vmName }}</span>
         <span class="rinci">{{ $node }} · {{ $type === 'lxc' ? 'LXC' : 'QEMU' }} {{ $vmid }}</span>
         <div class="sisa">
+            {{-- Identitas pengguna ditampilkan di layar, bukan hanya dicatat.
+                 Console memakai satu kredensial bersama, sehingga prompt di
+                 dalamnya selalu berbunyi `root@` siapa pun yang membuka. Baris
+                 ini yang mengingatkan bahwa perbuatan di sini tetap tercatat
+                 atas nama seseorang. --}}
+            <span class="pengguna" id="pengguna">
+                {{ auth()->user()->name }}
+                @if (! empty($userNip))
+                    <span class="nip">NIP {{ $userNip }}</span>
+                @endif
+            </span>
             <span class="status" id="status">Menyambungkan…</span>
             <button id="tutup" type="button">Tutup</button>
         </div>
@@ -74,15 +96,53 @@
         (function () {
             const cfg = @json($cfg);
 
-            const elStatus = document.getElementById('status');
-            const elWadah = document.getElementById('wadah');
+            const statusEl = document.getElementById('status');
+            const containerEl = document.getElementById('wadah');
 
-            const setStatus = (teks, kelas) => {
-                elStatus.textContent = teks;
-                elStatus.className = 'status' + (kelas ? ' ' + kelas : '');
+            const setStatus = (text, kelas) => {
+                statusEl.textContent = text;
+                statusEl.className = 'status' + (kelas ? ' ' + kelas : '');
             };
 
-            document.getElementById('tutup').onclick = () => window.close();
+            /**
+             * Denyut nadi & penutupan sesi — supaya lama akses tercatat benar.
+             *
+             * Tanpa keduanya, sesi yang tabnya ditutup paksa tetap tercatat
+             * terbuka dan durasinya terus bertambah; laporan akan menyatakan
+             * seseorang berada di dalam mesin berhari-hari.
+             */
+            let sessionClosed = false;
+
+            const closeSession = () => {
+                if (sessionClosed || !cfg.closeUrl) return;
+                sessionClosed = true;
+
+                // sendBeacon bertahan melewati penutupan tab — fetch biasa
+                // dibatalkan browser begitu halaman dilepas, sehingga sesi
+                // tidak pernah tertutup justru pada kejadian yang paling umum.
+                const data = new FormData();
+                data.append('_token', cfg.csrf);
+                navigator.sendBeacon(cfg.closeUrl, data);
+            };
+
+            if (cfg.heartbeatUrl) {
+                setInterval(() => {
+                    if (sessionClosed) return;
+                    fetch(cfg.heartbeatUrl, {
+                        method: 'POST',
+                        headers: { 'X-CSRF-TOKEN': cfg.csrf },
+                        keepalive: true,
+                    }).catch(() => { /* denyut yang gagal bukan alasan mengganggu pemakai */ });
+                }, 60000);
+            }
+
+            window.addEventListener('pagehide', closeSession);
+            window.addEventListener('beforeunload', closeSession);
+
+            document.getElementById('tutup').onclick = () => {
+                closeSession();
+                window.close();
+            };
 
             const term = new Terminal({
                 cursorBlink: true,
@@ -100,18 +160,18 @@
 
             const fitAddon = new FitAddon.FitAddon();
             term.loadAddon(fitAddon);
-            term.open(elWadah);
+            term.open(containerEl);
             fitAddon.fit();
             term.focus();
 
             let ws = null;
-            let siapKirim = false;
+            let ready = false;
 
             /**
              * ⚠️ Protokol termproxy Proxmox BUKAN aliran byte polos, dan bukan
              * pula JSON seperti sidecar teleport.
              *
-             * Setiap pesan berbentuk teks dengan awalan:
+             * Setiap pesan berbentuk text dengan awalan:
              *   "0:<panjang>:<data>"  → masukan/keluaran terminal
              *   "1:<kolom>:<baris>:"  → perubahan ukuran jendela
              *   "2"                   → denyut nadi, wajib dikirim berkala
@@ -122,21 +182,21 @@
              * terlihat seperti jaringan putus, bukan seperti autentikasi
              * ditolak.
              */
-            const kirimData = (data) => {
-                if (!ws || ws.readyState !== WebSocket.OPEN || !siapKirim) return;
+            const sendData = (data) => {
+                if (!ws || ws.readyState !== WebSocket.OPEN || !ready) return;
                 ws.send('0:' + data.length + ':' + data);
             };
 
-            const kirimUkuran = () => {
-                if (!ws || ws.readyState !== WebSocket.OPEN || !siapKirim) return;
+            const sendResize = () => {
+                if (!ws || ws.readyState !== WebSocket.OPEN || !ready) return;
                 ws.send('1:' + term.cols + ':' + term.rows + ':');
             };
 
-            term.onData(kirimData);
+            term.onData(sendData);
 
             {{-- Subprotokol 'binary' WAJIB disebut.
                  Proxmox menjawab baris autentikasi dengan frame BINER
-                 (opcode 2), bukan teks — diperiksa langsung terhadap
+                 (opcode 2), bukan text — diperiksa langsung terhadap
                  PVE 8.4.16. --}}
             ws = new WebSocket(cfg.wsUrl, 'binary');
             ws.binaryType = 'arraybuffer';
@@ -158,23 +218,23 @@
             };
 
             ws.onmessage = (ev) => {
-                let teks = typeof ev.data === 'string'
+                let text = typeof ev.data === 'string'
                     ? ev.data
                     : new TextDecoder().decode(new Uint8Array(ev.data));
 
                 // Balasan "OK" atas baris autentikasi — sesudah ini barulah
                 // terminal boleh dipakai.
-                if (!siapKirim) {
-                    if (teks.startsWith('OK')) {
-                        siapKirim = true;
+                if (!ready) {
+                    if (text.startsWith('OK')) {
+                        ready = true;
                         setStatus('Tersambung', 'tersambung');
-                        kirimUkuran();
+                        sendResize();
 
                         // Denyut nadi tiap 30 detik. Tanpa ini Proxmox memutus
                         // sambungan yang menganggur, dan bagi pemakai itu
                         // tampak seperti terminal membeku begitu saja.
                         setInterval(() => {
-                            if (ws && ws.readyState === WebSocket.OPEN && siapKirim) {
+                            if (ws && ws.readyState === WebSocket.OPEN && ready) {
                                 ws.send('2');
                             }
                         }, 30000);
@@ -186,12 +246,13 @@
                     return;
                 }
 
-                term.write(teks);
+                term.write(text);
             };
 
             ws.onerror = () => setStatus('Galat sambungan', 'putus');
 
             ws.onclose = () => {
+                closeSession();
                 setStatus('Terputus', 'putus');
                 term.write('\r\n\x1b[33m[sesi berakhir — buka console lagi dari daftar VM]\x1b[0m\r\n');
             };
@@ -200,8 +261,8 @@
             // diberi tahu supaya tampilan tidak terpotong.
             new ResizeObserver(() => {
                 try { fitAddon.fit(); } catch (e) { /* diabaikan */ }
-                kirimUkuran();
-            }).observe(elWadah);
+                sendResize();
+            }).observe(containerEl);
         })();
     </script>
 </body>

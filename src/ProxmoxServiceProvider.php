@@ -2,6 +2,7 @@
 
 namespace Nawasara\Proxmox;
 
+use Nawasara\Proxmox\Models\ConsoleSession;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
@@ -82,6 +83,38 @@ class ProxmoxServiceProvider extends ServiceProvider
                 ->name('nawasara-proxmox:sync-ips')
                 ->cron("0 */{$ipInterval} * * *")
                 ->withoutOverlapping(30);
+
+            // Tutup sesi console yang menggantung.
+            //
+            // Halaman console berdenyut tiap menit dan mengirim penutupan saat
+            // tab ditutup, tetapi keduanya dapat gagal: peramban berhenti
+            // mendadak, jaringan putus, atau sesi Laravel kedaluwarsa tepat
+            // saat tab ditutup sehingga penutupannya ditolak CSRF.
+            //
+            // Tanpa penyapu ini, sesi seperti itu tercatat terbuka selamanya
+            // dan durasinya terus bertambah — laporan akan menyatakan
+            // seseorang berada di dalam mesin berhari-hari, dan itu satu-satunya
+            // catatan yang ada tentang siapa mengakses apa.
+            //
+            // Waktu berakhirnya diambil dari denyut TERAKHIR, bukan saat
+            // penyapuan berjalan; memakai waktu sekarang akan menambahkan
+            // menit-menit yang tidak pernah terjadi.
+            $schedule->call(function () {
+                ConsoleSession::query()
+                    ->whereNull('ended_at')
+                    ->whereNotNull('last_seen_at')
+                    ->where('last_seen_at', '<', now()->subMinutes(5))
+                    ->get()
+                    ->each(function (ConsoleSession $session) {
+                        $session->update([
+                            'ended_at' => $session->last_seen_at,
+                            'duration_seconds' => (int) $session->started_at->diffInSeconds($session->last_seen_at),
+                        ]);
+                    });
+            })
+                ->name('nawasara-proxmox:close-stale-consoles')
+                ->everyFiveMinutes()
+                ->withoutOverlapping(10);
 
             // Pemeriksaan kapasitas — tiap jam, bukan tiap 15 menit.
             //
