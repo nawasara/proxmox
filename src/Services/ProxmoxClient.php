@@ -363,6 +363,11 @@ class ProxmoxClient
         // cukup dan sambungan ditolak.
         $data['session_ticket'] = $sesi['ticket'];
 
+        // Nama pengguna ikut dikirim agar browser tidak perlu memotongnya dari
+        // tiket. Bentuk tiket "PVE:root@pam:HEX::TANDA" membuat pemotongan
+        // kebetulan benar untuk root@pam dan salah untuk realm lain.
+        $data['console_user'] = $sesi['username'] ?? $this->consoleUser();
+
         return $data;
     }
 
@@ -374,13 +379,6 @@ class ProxmoxClient
      */
     public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket): ?string
     {
-        $host = (string) Vault::get('proxmox', 'host');
-        if (! $host) {
-            return null;
-        }
-
-        $base = preg_replace('#^https?://#', '', rtrim($host, '/'));
-
         $path = $vmid === null
             ? "/api2/json/nodes/{$node}/vncwebsocket"
             : "/api2/json/nodes/{$node}/".($type === 'lxc' ? 'lxc' : 'qemu')."/{$vmid}/vncwebsocket";
@@ -390,7 +388,26 @@ class ProxmoxClient
             'vncticket' => $ticket,
         ]);
 
-        return "wss://{$base}{$path}?".$params;
+        // ⚠️ Menuju NAWASARA, bukan langsung ke Proxmox.
+        //
+        // Sambungan langsung mustahil, dan dua sebabnya masing-masing sudah
+        // cukup untuk menggagalkannya:
+        //
+        // 1. Sertifikat Proxmox ditandatangani sendiri. Browser menolak wss://
+        //    ke sertifikat tak tepercaya TANPA dialog apa pun — sambungan
+        //    ditutup seketika, dan bagi pemakai terlihat seperti "sesi
+        //    langsung tertutup" tanpa keterangan sama sekali.
+        //
+        // 2. Cookie PVEAuthCookie tidak ikut terkirim karena halaman console
+        //    berasal dari domain Nawasara sementara websocket menuju domain
+        //    Proxmox.
+        //
+        // nginx menjembatani di /__proxmox-ws/ memakai sertifikat Nawasara
+        // yang sah. Alamat Proxmox-nya tidak pernah sampai ke browser.
+        $base = rtrim((string) config('app.url'), '/');
+        $base = preg_replace('#^https?://#', '', $base);
+
+        return "wss://{$base}/__proxmox-ws{$path}?".$params;
     }
 
     /**

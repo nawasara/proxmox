@@ -3,7 +3,12 @@
      kurung siku yang membentang beberapa baris
      ("Unclosed '[' ... does not match ')'"). --}}
 @php
-    $cfg = ['wsUrl' => $wsUrl, 'sessionTicket' => $sessionTicket, 'vmName' => $vmName];
+    $cfg = [
+        'wsUrl' => $wsUrl,
+        'sessionTicket' => $sessionTicket,
+        'consoleUser' => $consoleUser,
+        'vmName' => $vmName,
+    ];
 @endphp
 <!DOCTYPE html>
 <html lang="id" class="dark">
@@ -129,12 +134,27 @@
 
             term.onData(kirimData);
 
-            ws = new WebSocket(cfg.wsUrl);
+            {{-- Subprotokol 'binary' WAJIB disebut.
+                 Proxmox menjawab baris autentikasi dengan frame BINER
+                 (opcode 2), bukan teks — diperiksa langsung terhadap
+                 PVE 8.4.16. --}}
+            ws = new WebSocket(cfg.wsUrl, 'binary');
             ws.binaryType = 'arraybuffer';
 
             ws.onopen = () => {
-                // Baris autentikasi: "<user>:<tiket>\n". Proxmox membalas "OK".
-                ws.send(cfg.sessionTicket.split(':')[1] + ':' + cfg.sessionTicket + '\n');
+                {{-- Baris autentikasi: "<user>:<tiket>\n".
+
+                     ⚠️ Nama pengguna dikirim dari server, TIDAK dipotong dari
+                     tiket di sini. Tiket berbentuk "PVE:root@pam:HEX::TANDA",
+                     sehingga split(':')[1] kebetulan benar untuk root@pam dan
+                     salah untuk realm lain.
+
+                     ⚠️ Cookie PVEAuthCookie TIDAK terkirim browser: halaman ini
+                     dilayani dari nawasara.ponorogo.go.id sementara websocket
+                     menuju host Proxmox, jadi cookie-nya lintas-domain. Baris
+                     autentikasi inilah satu-satunya cara Proxmox mengenali
+                     sesi di jalur ini. --}}
+                ws.send(cfg.consoleUser + ':' + cfg.sessionTicket + '\n');
             };
 
             ws.onmessage = (ev) => {

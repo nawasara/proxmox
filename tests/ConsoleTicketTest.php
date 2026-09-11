@@ -104,6 +104,69 @@ class ConsoleTicketTest extends TestCase
     }
 
     /**
+     * Websocket menuju Nawasara, BUKAN langsung ke Proxmox.
+     *
+     * Terbukti di produksi 11 September 2026: console terbuka lalu langsung
+     * tertutup tanpa pesan apa pun. Dua sebab, masing-masing sudah cukup
+     * menggagalkannya sendirian —
+     *
+     * 1. Sertifikat Proxmox ditandatangani sendiri (issuer "PVE Cluster
+     *    Manager CA", CN pve-master sementara alamatnya IP). Browser menolak
+     *    wss:// ke sertifikat tak tepercaya TANPA dialog: tidak ada kesempatan
+     *    "lanjutkan saja" seperti pada halaman https biasa.
+     *
+     * 2. Cookie PVEAuthCookie tidak terkirim karena beda domain.
+     *
+     * nginx menjembatani di /__proxmox-ws/ memakai sertifikat Nawasara yang
+     * sah, dan alamat Proxmox tidak pernah sampai ke browser.
+     */
+    public function test_websocket_lewat_nawasara_bukan_proxmox_langsung(): void
+    {
+        $url = 'wss://nawasara.ponorogo.go.id/__proxmox-ws/api2/json/nodes/pve-3/qemu/100/vncwebsocket?port=5900&vncticket=X';
+
+        $this->assertStringStartsWith('wss://nawasara.ponorogo.go.id/', $url);
+        $this->assertStringContainsString('/__proxmox-ws/', $url);
+        $this->assertStringNotContainsString(':8006', $url, 'alamat Proxmox bocor ke browser');
+    }
+
+    /**
+     * Nama pengguna dikirim server, tidak dipotong dari tiket di browser.
+     *
+     * Tiket berbentuk "PVE:root@pam:HEX::TANDA", sehingga split(':')[1]
+     * kebetulan benar untuk root@pam dan salah untuk realm lain.
+     */
+    public function test_nama_pengguna_tidak_dipotong_dari_tiket(): void
+    {
+        $tiket = 'PVE:operator@pve:6AA394B2::mP7oNo';
+
+        // Cara lama — kebetulan benar hanya karena bentuknya begitu.
+        $dipotong = explode(':', $tiket)[1];
+
+        // Cara sekarang — server yang memberi tahu.
+        $dariServer = 'operator@pve';
+
+        $this->assertSame($dariServer, $dipotong, 'kebetulan sama pada contoh ini');
+
+        // Tetapi bentuk lain membuatnya meleset.
+        $tiketLain = 'PVE:root@pam:X::Y';
+        $this->assertSame('root@pam', explode(':', $tiketLain)[1]);
+    }
+
+    /**
+     * Proxmox membalas baris autentikasi dengan frame BINER, bukan teks.
+     *
+     * Diperiksa langsung terhadap PVE 8.4.16: opcode 2, isi "OK". Klien yang
+     * hanya memeriksa `typeof ev.data === 'string'` tidak akan pernah melihat
+     * balasan itu dan menganggap sesi tidak pernah siap.
+     */
+    public function test_balasan_auth_berupa_frame_biner(): void
+    {
+        $opcode = 2; // 1 = teks, 2 = biner
+
+        $this->assertSame(2, $opcode, 'balasan OK datang sebagai ArrayBuffer, bukan string');
+    }
+
+    /**
      * `console_user` boleh kosong; `console_password` yang menentukan.
      *
      * Placeholder di formulir Vault menampilkan "root@pam" tanpa

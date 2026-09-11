@@ -53,6 +53,7 @@ class ConsoleController extends Controller
         return response()->view('nawasara-proxmox::console.show', [
             'wsUrl' => $sesi['ws_url'],
             'sessionTicket' => $sesi['session_ticket'],
+            'consoleUser' => $sesi['console_user'] ?? 'root@pam',
             'vmName' => $sesi['vm_name'],
             'node' => $sesi['node'],
             'vmid' => $sesi['vmid'],

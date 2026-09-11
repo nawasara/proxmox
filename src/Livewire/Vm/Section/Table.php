@@ -247,6 +247,7 @@ class Table extends Component
             'user_id' => auth()->id(),
             'ws_url' => $wsUrl,
             'session_ticket' => $tiket['session_ticket'] ?? '',
+            'console_user' => $tiket['console_user'] ?? 'root@pam',
             'vm_name' => $vm->name,
             'node' => $vm->node_name,
             'vmid' => (int) $vm->vmid,
