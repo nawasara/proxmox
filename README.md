@@ -168,3 +168,8 @@ The `nawasara_proxmox_vms` table reserves an `itop_server_id` column (nullable, 
 ## License
 
 MIT
+
+<!-- v0.4.1: rilis ulang karena zip dist v0.4.0 di Packagist berisi kode
+     sebelum console. Referensi commit-nya benar, isinya tidak — dan composer
+     memasangnya tanpa keluhan apa pun. Nomor versi BARU yang menyelesaikannya;
+     menerbitkan ulang tag dengan nama sama tidak menyegarkan zip-nya. -->
