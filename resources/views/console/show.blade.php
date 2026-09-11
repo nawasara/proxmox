@@ -9,6 +9,11 @@
         'consoleUser' => $consoleUser,
         'vmName' => $vmName,
         'sessionId' => $sessionId,
+
+        // Kredensial login DI DALAM container. Null berarti mesin ini tidak
+        // disetel akses otomatis, dan consolenya meminta login seperti biasa.
+        'loginUser' => $loginUser,
+        'loginPassword' => $loginPassword,
         'heartbeatUrl' => $sessionId ? route('nawasara-proxmox.console.heartbeat', $sessionId) : null,
         'closeUrl' => $sessionId ? route('nawasara-proxmox.console.close', $sessionId) : null,
         'csrf' => csrf_token(),
@@ -168,6 +173,52 @@
             let ready = false;
 
             /**
+             * Penyuntikan login otomatis.
+             *
+             * Container menjalankan getty dan menyajikan prompt `login:`.
+             * Nawasara menjawabnya, sehingga pengguna tidak perlu mengetik
+             * kredensial mesin yang memang tidak dipegangnya.
+             *
+             * ⚠️ Getty SENGAJA dibiarkan berdiri, alih-alih dimatikan agar
+             * console langsung memberi shell. Dengan getty, `last` dan `who`
+             * di dalam mesin tetap mencatat sebuah login sungguhan, dan
+             * kredensialnya dapat dicabut per mesin dari Nawasara. Mematikan
+             * getty menjadikan permission Nawasara penjaga tunggal, dan tidak
+             * menyisakan apa pun yang dapat ditarik kembali oleh pemilik mesin.
+             *
+             * Prompt dijawab paling banyak sekali masing-masing: bila
+             * kredensialnya salah, getty akan bertanya lagi — dan menjawabnya
+             * berulang hanya akan mengunci akun setelah beberapa percobaan.
+             */
+            let loginSent = false;
+            let passwordSent = false;
+
+            const autoLoginEnabled = Boolean(cfg.loginUser && cfg.loginPassword);
+
+            const maybeAutoLogin = (text) => {
+                if (!autoLoginEnabled || passwordSent) return;
+
+                // Prompt getty diakhiri "login:" dan prompt sandi "Password:".
+                // Pencocokan dilakukan pada ekor keluaran supaya tidak terpicu
+                // oleh kata yang kebetulan muncul di tengah teks lain.
+                const tail = text.slice(-40);
+
+                if (!loginSent && /login:\s*$/i.test(tail)) {
+                    ws.send('0:' + (cfg.loginUser.length + 1) + ':' + cfg.loginUser + '\n');
+                    loginSent = true;
+                    return;
+                }
+
+                if (loginSent && /password:\s*$/i.test(tail)) {
+                    ws.send('0:' + (cfg.loginPassword.length + 1) + ':' + cfg.loginPassword + '\n');
+                    passwordSent = true;
+
+                    // Sandi tidak pernah digambar ke terminal — getty sendiri
+                    // tidak menggemakannya, dan kita pun tidak menuliskannya.
+                }
+            };
+
+            /**
              * ⚠️ Protokol termproxy Proxmox BUKAN aliran byte polos, dan bukan
              * pula JSON seperti sidecar teleport.
              *
@@ -247,6 +298,7 @@
                 }
 
                 term.write(text);
+                maybeAutoLogin(text);
             };
 
             ws.onerror = () => setStatus('Galat sambungan', 'putus');

@@ -33,6 +33,13 @@ return [
                 'navigate' => true,
             ],
             [
+                'label' => 'Login Otomatis',
+                'icon' => 'lucide-key-round',
+                'url' => url($prefix.'/console-credentials'),
+                'permission' => 'proxmox.console.credential',
+                'navigate' => true,
+            ],
+            [
                 'label' => 'Riwayat Console',
                 'icon' => 'lucide-history',
                 'url' => url($prefix.'/console-history'),

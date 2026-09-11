@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Nawasara\Proxmox\Livewire\Console\Credential as ConsoleCredentialPage;
 use Nawasara\Proxmox\Livewire\Console\Index as ConsoleLogIndex;
 use Nawasara\Proxmox\Livewire\Ip\Index as IpIndex;
 use Nawasara\Proxmox\Livewire\Node\Index as NodeIndex;
@@ -32,6 +33,10 @@ Route::middleware(['web', 'auth'])->prefix('nawasara-proxmox')->group(function (
     Route::get('console-history', ConsoleLogIndex::class)
         ->middleware(PermissionMiddleware::using('proxmox.console.history'))
         ->name('nawasara-proxmox.console.history');
+
+    Route::get('console-credentials', ConsoleCredentialPage::class)
+        ->middleware(PermissionMiddleware::using('proxmox.console.credential'))
+        ->name('nawasara-proxmox.console.credentials');
 
     Route::get('console/{ticket}', [ConsoleController::class, 'show'])
         ->middleware(PermissionMiddleware::using('proxmox.vm.console'))
