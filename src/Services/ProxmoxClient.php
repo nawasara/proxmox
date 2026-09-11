@@ -377,7 +377,7 @@ class ProxmoxClient
      * Sama seperti VNC, tetapi menuju vncwebsocket dengan port dari termproxy —
      * Proxmox memakai endpoint websocket yang sama untuk keduanya.
      */
-    public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket): ?string
+    public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket, string $sessionTicket = ''): ?string
     {
         $path = $vmid === null
             ? "/api2/json/nodes/{$node}/vncwebsocket"
@@ -386,6 +386,27 @@ class ProxmoxClient
         $params = http_build_query([
             'port' => $port,
             'vncticket' => $ticket,
+
+            // ⚠️ Tiket sesi dititipkan lewat query, BUKAN cookie.
+            //
+            // Proxmox menolak handshake websocket tanpa cookie PVEAuthCookie —
+            // "401 No ticket", dan penolakan itu terjadi SEBELUM WebSocket
+            // terbentuk, sehingga baris autentikasi tidak pernah sempat
+            // terkirim. Browser sendiri tidak dapat mengirim cookie itu:
+            // halaman console berasal dari domain Nawasara sementara cookie
+            // tersebut milik domain Proxmox.
+            //
+            // nginx membaca nilai ini, menyusun cookie-nya, lalu MEMBUANG
+            // `pveauth` dari permintaan yang diteruskan.
+            //
+            // Ini TIDAK melanggar aturan "tiket tidak boleh di URL" yang
+            // dipegang halaman console. Yang dilarang adalah URL HALAMAN —
+            // alamat yang diketik, dibagikan, dan tersimpan di riwayat
+            // peramban; itu tetap hanya berisi kunci cache acak. Alamat
+            // websocket ini tidak pernah menjadi alamat halaman: ia dibaca
+            // dari cache server, dikirim sebagai variabel di dalam halaman,
+            // dan umurnya sependek tiket termproxy itu sendiri.
+            'pveauth' => $sessionTicket,
         ]);
 
         // ⚠️ Menuju NAWASARA, bukan langsung ke Proxmox.

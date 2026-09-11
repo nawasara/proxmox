@@ -236,6 +236,7 @@ class Table extends Component
             $vm->vm_type,
             (int) $tiket['port'],
             (string) $tiket['ticket'],
+            (string) ($tiket['session_ticket'] ?? ''),
         );
 
         $kunci = bin2hex(random_bytes(16));
