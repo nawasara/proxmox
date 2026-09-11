@@ -261,6 +261,12 @@ class Table extends Component
         $this->detailId = $id;
         $this->showSnapForm = false;
         $this->resetSnapForm();
+
+        // Buang hasil hitungan VM sebelumnya. Tanpa ini, membuka VM kedua
+        // menampilkan firewall milik VM pertama — dan keliru di sini berarti
+        // seseorang menilai keamanan mesin yang salah.
+        unset($this->detailFirewall);
+
         $this->dispatch('modal-open:proxmox-vm-detail');
     }
 
@@ -355,6 +361,46 @@ class Table extends Component
 
         $this->toastSuccess("Snapshot '{$snapName}' sedang dihapus.");
         unset($this->detailSnapshots);
+    }
+
+    /**
+     * Keadaan firewall VM yang sedang dibuka.
+     *
+     * ⚠️ Mengembalikan `enable` BERSAMA daftar aturannya, tidak boleh salah
+     * satu saja.
+     *
+     * Sebuah VM dapat memiliki aturan lengkap sementara firewall-nya sendiri
+     * dimatikan, dan dalam keadaan itu tidak satu pun aturan berlaku.
+     * Menampilkan daftar aturan tanpa status membuat VM terlihat terlindungi
+     * padahal terbuka sepenuhnya — kekeliruan yang baru ketahuan saat sudah
+     * terlambat.
+     *
+     * @return array{enable: bool, rules: array<int, array<string, mixed>>}|null
+     */
+    #[Computed]
+    public function detailFirewall(): ?array
+    {
+        $vm = $this->detail;
+        if (! $vm) {
+            return null;
+        }
+
+        try {
+            $client = app(ProxmoxClient::class);
+
+            $opts = $client->getFirewallOptions($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+            $rules = $client->getFirewallRules($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+        } catch (\Throwable) {
+            // Proxmox tak terjangkau — kembalikan null agar bagian ini tidak
+            // digambar sama sekali, bukan digambar kosong. Firewall kosong
+            // dan firewall tak terbaca artinya sangat berbeda.
+            return null;
+        }
+
+        return [
+            'enable' => (bool) ($opts['enable'] ?? false),
+            'rules' => $rules,
+        ];
     }
 
     /**

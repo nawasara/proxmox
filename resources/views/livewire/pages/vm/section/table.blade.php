@@ -461,6 +461,118 @@
                 @endif
             @endif
 
+            {{-- Firewall --}}
+            @if (! $v->template && $this->detailFirewall !== null)
+                @php $fw = $this->detailFirewall; @endphp
+                <div class="mt-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+                            Firewall ({{ count($fw['rules']) }} aturan)
+                        </h4>
+
+                        {{-- Status firewall ditampilkan SEJAJAR dengan jumlah
+                             aturan, bukan disembunyikan. Sebuah VM dapat punya
+                             aturan lengkap sementara firewall-nya mati, dan
+                             dalam keadaan itu tidak satu pun aturan berlaku. --}}
+                        @if ($fw['enable'])
+                            <x-nawasara-ui::badge color="success">Aktif</x-nawasara-ui::badge>
+                        @else
+                            <x-nawasara-ui::badge color="danger">Nonaktif</x-nawasara-ui::badge>
+                        @endif
+                    </div>
+
+                    @if (! $fw['enable'] && count($fw['rules']) > 0)
+                        {{-- Peringatan ini yang paling berguna di seluruh
+                             bagian: aturannya ada, terbaca meyakinkan, dan
+                             sama sekali tidak menahan apa pun. --}}
+                        <div class="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-800/50 dark:bg-rose-900/20">
+                            <p class="text-xs text-rose-800 dark:text-rose-300">
+                                <x-lucide-shield-off class="size-3.5 inline -mt-0.5" />
+                                Firewall VM ini <strong>dimatikan</strong> — {{ count($fw['rules']) }} aturan di bawah
+                                tidak berlaku sama sekali.
+                            </p>
+                        </div>
+                    @endif
+
+                    @if (count($fw['rules']) === 0)
+                        <p class="text-xs text-gray-500 dark:text-neutral-400">
+                            Tidak ada aturan khusus pada VM ini. Aturan tingkat datacenter
+                            atau node tetap berlaku.
+                        </p>
+                    @else
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="border-b border-gray-200 dark:border-neutral-700">
+                                        {{-- Nomor urut ditampilkan karena firewall
+                                             dievaluasi BERURUTAN: aturan pertama yang
+                                             cocok yang menentukan, sisanya tidak
+                                             dilihat. Tanpa kolom ini, dua aturan yang
+                                             saling bertentangan terlihat setara. --}}
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">#</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Aksi</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Arah</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Proto</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Sumber</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Tujuan</th>
+                                        <th class="py-1.5 pr-3 text-left font-medium text-gray-500 dark:text-neutral-400">Port</th>
+                                        <th class="py-1.5 text-left font-medium text-gray-500 dark:text-neutral-400">Keterangan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($fw['rules'] as $rule)
+                                        @php
+                                            // Aturan yang dinonaktifkan satu per satu tetap
+                                            // ditampilkan, tetapi diredupkan — menyembunyikannya
+                                            // membuat nomor urut di sini tidak cocok dengan
+                                            // yang terlihat di Proxmox.
+                                            $aktif = ($rule['enable'] ?? 1) == 1;
+                                            $aksi = strtoupper($rule['action'] ?? '-');
+                                        @endphp
+                                        <tr @class([
+                                            'border-b border-gray-100 dark:border-neutral-800',
+                                            'opacity-40' => ! $aktif,
+                                        ])>
+                                            <td class="py-1.5 pr-3 font-mono text-gray-400 dark:text-neutral-500">{{ $rule['pos'] ?? $loop->index }}</td>
+                                            <td class="py-1.5 pr-3">
+                                                <span @class([
+                                                    'font-medium',
+                                                    'text-emerald-600 dark:text-emerald-400' => $aksi === 'ACCEPT',
+                                                    'text-rose-600 dark:text-rose-400' => in_array($aksi, ['DROP', 'REJECT'], true),
+                                                    'text-gray-700 dark:text-neutral-300' => ! in_array($aksi, ['ACCEPT', 'DROP', 'REJECT'], true),
+                                                ])>{{ $aksi }}</span>
+                                                @if (! $aktif)
+                                                    <span class="ml-1 text-gray-400 dark:text-neutral-500">(mati)</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-1.5 pr-3 text-gray-700 dark:text-neutral-300">{{ $rule['type'] ?? '-' }}</td>
+                                            <td class="py-1.5 pr-3 font-mono text-gray-700 dark:text-neutral-300">{{ $rule['proto'] ?? '—' }}</td>
+                                            <td class="py-1.5 pr-3 font-mono text-gray-700 dark:text-neutral-300">{{ $rule['source'] ?? 'any' }}</td>
+                                            <td class="py-1.5 pr-3 font-mono text-gray-700 dark:text-neutral-300">{{ $rule['dest'] ?? 'any' }}</td>
+                                            <td class="py-1.5 pr-3 font-mono text-gray-700 dark:text-neutral-300">{{ $rule['dport'] ?? '—' }}</td>
+                                            {{-- `comment` hampir selalu kosong pada data
+                                                 nyata di cluster ini; `log` justru yang
+                                                 terisi dan berguna — ia menentukan apakah
+                                                 kecocokan aturan ini tercatat. --}}
+                                            <td class="py-1.5 text-gray-600 dark:text-neutral-400">
+                                                {{ $rule['comment'] ?? '' }}
+                                                @if (empty($rule['comment']) && ! empty($rule['log']) && $rule['log'] !== 'nolog')
+                                                    <span class="text-gray-400 dark:text-neutral-500">log: {{ $rule['log'] }}</span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <p class="mt-2 text-xs text-gray-500 dark:text-neutral-500">
+                            Hanya-baca. Perubahan aturan dilakukan di Proxmox.
+                        </p>
+                    @endif
+                </div>
+            @endif
+
             {{-- Snapshots --}}
             @if (! $v->template && auth()->user()?->can('proxmox.vm.snapshot'))
                 @php $snapshots = $this->detailSnapshots; @endphp
