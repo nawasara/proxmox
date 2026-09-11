@@ -12,8 +12,8 @@
 
         // Kredensial login DI DALAM container. Null berarti mesin ini tidak
         // disetel akses otomatis, dan consolenya meminta login seperti biasa.
-        'loginUser' => $loginUser,
-        'loginPassword' => $loginPassword,
+        // Perintah masuk ke container, dijalankan di shell node.
+        'enterCommand' => $enterCommand,
         'heartbeatUrl' => $sessionId ? route('nawasara-proxmox.console.heartbeat', $sessionId) : null,
         'closeUrl' => $sessionId ? route('nawasara-proxmox.console.close', $sessionId) : null,
         'csrf' => csrf_token(),
@@ -172,51 +172,6 @@
             let ws = null;
             let ready = false;
 
-            /**
-             * Penyuntikan login otomatis.
-             *
-             * Container menjalankan getty dan menyajikan prompt `login:`.
-             * Nawasara menjawabnya, sehingga pengguna tidak perlu mengetik
-             * kredensial mesin yang memang tidak dipegangnya.
-             *
-             * ⚠️ Getty SENGAJA dibiarkan berdiri, alih-alih dimatikan agar
-             * console langsung memberi shell. Dengan getty, `last` dan `who`
-             * di dalam mesin tetap mencatat sebuah login sungguhan, dan
-             * kredensialnya dapat dicabut per mesin dari Nawasara. Mematikan
-             * getty menjadikan permission Nawasara penjaga tunggal, dan tidak
-             * menyisakan apa pun yang dapat ditarik kembali oleh pemilik mesin.
-             *
-             * Prompt dijawab paling banyak sekali masing-masing: bila
-             * kredensialnya salah, getty akan bertanya lagi — dan menjawabnya
-             * berulang hanya akan mengunci akun setelah beberapa percobaan.
-             */
-            let loginSent = false;
-            let passwordSent = false;
-
-            const autoLoginEnabled = Boolean(cfg.loginUser && cfg.loginPassword);
-
-            const maybeAutoLogin = (text) => {
-                if (!autoLoginEnabled || passwordSent) return;
-
-                // Prompt getty diakhiri "login:" dan prompt sandi "Password:".
-                // Pencocokan dilakukan pada ekor keluaran supaya tidak terpicu
-                // oleh kata yang kebetulan muncul di tengah teks lain.
-                const tail = text.slice(-40);
-
-                if (!loginSent && /login:\s*$/i.test(tail)) {
-                    ws.send('0:' + (cfg.loginUser.length + 1) + ':' + cfg.loginUser + '\n');
-                    loginSent = true;
-                    return;
-                }
-
-                if (loginSent && /password:\s*$/i.test(tail)) {
-                    ws.send('0:' + (cfg.loginPassword.length + 1) + ':' + cfg.loginPassword + '\n');
-                    passwordSent = true;
-
-                    // Sandi tidak pernah digambar ke terminal — getty sendiri
-                    // tidak menggemakannya, dan kita pun tidak menuliskannya.
-                }
-            };
 
             /**
              * ⚠️ Protokol termproxy Proxmox BUKAN aliran byte polos, dan bukan
@@ -281,6 +236,27 @@
                         setStatus('Tersambung', 'tersambung');
                         sendResize();
 
+                        /**
+                         * Masuk ke container lewat shell node.
+                         *
+                         * Sambungan ini menuju shell node Proxmox, yang
+                         * terbuka langsung sebagai root tanpa login. `pct
+                         * enter` menembus ke dalam container lewat kernel
+                         * host — tanpa kredensial container, dan tanpa
+                         * berurusan dengan getty sama sekali.
+                         *
+                         * Jeda singkat memberi shell kesempatan menggambar
+                         * prompt lebih dulu; mengetik sebelum itu membuat
+                         * perintahnya tertelan bersama banner.
+                         */
+                        if (cfg.enterCommand) {
+                            setTimeout(() => {
+                                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                                const cmd = cfg.enterCommand + '\n';
+                                ws.send('0:' + cmd.length + ':' + cmd);
+                            }, 600);
+                        }
+
                         // Denyut nadi tiap 30 detik. Tanpa ini Proxmox memutus
                         // sambungan yang menganggur, dan bagi pemakai itu
                         // tampak seperti terminal membeku begitu saja.
@@ -298,7 +274,6 @@
                 }
 
                 term.write(text);
-                maybeAutoLogin(text);
             };
 
             ws.onerror = () => setStatus('Galat sambungan', 'putus');

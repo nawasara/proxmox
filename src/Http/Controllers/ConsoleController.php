@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
-use Nawasara\Proxmox\Models\ConsoleCredential;
 use Nawasara\Proxmox\Models\ConsoleSession;
 
 /**
@@ -52,10 +51,6 @@ class ConsoleController extends Controller
         // daftar VM, bukan memutar ulang sambungan lama.
         Cache::forget($cacheKey);
 
-        // Null bila mesin ini tidak disetel akses otomatis — consolenya lalu
-        // meminta login seperti biasa, dan itu keadaan bawaan yang benar.
-        $credential = ConsoleCredential::forVm($cached['node'], (int) $cached['vmid']);
-
         return response()->view('nawasara-proxmox::console.show', [
             'wsUrl' => $cached['ws_url'],
             'sessionTicket' => $cached['session_ticket'],
@@ -68,11 +63,8 @@ class ConsoleController extends Controller
             // console serta tercatat di riwayat akses.
             'userNip' => null,
 
-            // Kredensial login di dalam container. Dibaca DI SINI, bukan
-            // disimpan di cache bersama tiket: cache dapat terbaca dari
-            // penyimpanan bersama, dan sandi mesin tidak perlu singgah di sana.
-            'loginUser' => $credential?->login_user,
-            'loginPassword' => $credential?->login_password,
+            // Perintah masuk ke container, diketikkan setelah shell node siap.
+            'enterCommand' => $cached['enter_command'] ?? null,
             'vmName' => $cached['vm_name'],
             'node' => $cached['node'],
             'vmid' => $cached['vmid'],

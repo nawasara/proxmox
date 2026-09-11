@@ -224,7 +224,27 @@ class Table extends Component
             return;
         }
 
-        $ticket = $client->createTermTicket($vm->node_name, (int) $vm->vmid, $vm->vm_type);
+        // ⚠️ Tiket diterbitkan untuk SHELL NODE, bukan untuk container.
+        //
+        // Console container melewati getty, yang menyajikan `login:` dan
+        // menuntut kredensial mesin — kredensial yang tidak dipegang pengguna
+        // Nawasara, dan yang kalau disimpan berarti satu sandi per mesin harus
+        // dijaga dan dicabut satu per satu.
+        //
+        // Shell node membuka langsung sebagai root tanpa login sama sekali
+        // (diperiksa terhadap pve-1: banner Debian muncul seketika, `whoami`
+        // menjawab root). Dari sana `pct enter <vmid>` menembus ke dalam
+        // container lewat kernel host — tanpa kredensial container, tanpa
+        // menyentuh getty, dan berlaku untuk SEMUA container tanpa disetel
+        // satu per satu.
+        //
+        // Untuk QEMU jalur ini tidak berlaku: `pct` hanya mengurus LXC, dan
+        // mesin QEMU tetap memakai console-nya sendiri.
+        $isContainer = $vm->vm_type === 'lxc';
+
+        $ticket = $isContainer
+            ? $client->createTermTicket($vm->node_name, null)
+            : $client->createTermTicket($vm->node_name, (int) $vm->vmid, $vm->vm_type);
 
         if (! $ticket || empty($ticket['ticket']) || empty($ticket['port'])) {
             $this->toastError('Proxmox menolak menerbitkan tiket console. Periksa kredensial console di Vault.');
@@ -233,7 +253,7 @@ class Table extends Component
 
         $wsUrl = $client->termWebSocketUrl(
             $vm->node_name,
-            (int) $vm->vmid,
+            $isContainer ? null : (int) $vm->vmid,
             $vm->vm_type,
             (int) $ticket['port'],
             (string) $ticket['ticket'],
@@ -271,6 +291,10 @@ class Table extends Component
             'session_ticket' => $ticket['session_ticket'] ?? '',
             'console_user' => $ticket['console_user'] ?? 'root@pam',
             'session_id' => $logEntry->id,
+
+            // Diketikkan Nawasara setelah shell node siap. Kosong untuk QEMU,
+            // yang consolenya memang miliknya sendiri.
+            'enter_command' => $isContainer ? 'pct enter '.(int) $vm->vmid : null,
             'vm_name' => $vm->name,
             'node' => $vm->node_name,
             'vmid' => (int) $vm->vmid,
