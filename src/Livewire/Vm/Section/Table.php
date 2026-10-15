@@ -4,6 +4,7 @@ namespace Nawasara\Proxmox\Livewire\Vm\Section;
 
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -65,10 +66,16 @@ class Table extends Component
     public string $search = '';
     public int $perPage = 50;
 
+    // Audit keamanan 15 Oktober 2026: id hanya diisi server lewat
+    // openDetail()/openLog(). Dikunci supaya payload wire tidak dapat
+    // mengalihkan aksi snapshot ke VM lain.
+
     // Detail modal
+    #[Locked]
     public ?int $detailId = null;
 
     // Log modal
+    #[Locked]
     public ?int $logSyncJobId = null;
 
     // Snapshot create form
@@ -306,6 +313,10 @@ class Table extends Component
 
     public function openDetail(int $id): void
     {
+        // Audit keamanan 15 Oktober 2026 (R4): detail menarik data langsung
+        // dari Proxmox, jadi izin lihat diperiksa ulang.
+        Gate::authorize('proxmox.vm.view');
+
         $this->detailId = $id;
         $this->showSnapForm = false;
         $this->resetSnapForm();
@@ -370,6 +381,9 @@ class Table extends Component
         unset($this->detailSnapshots);
     }
 
+    // Audit keamanan 15 Oktober 2026 (S6): rollback membuang semua perubahan
+    // VM sejak snapshot, hapus snapshot tidak dapat diurungkan. Wajib sudo.
+    #[RequiresSudo(reason: 'rollback snapshot VM')]
     public function rollbackSnapshot(string $snapName): void
     {
         Gate::authorize('proxmox.vm.snapshot');
@@ -390,6 +404,7 @@ class Table extends Component
         $this->toastSuccess("Rollback ke snapshot '{$snapName}' sedang berjalan.");
     }
 
+    #[RequiresSudo(reason: 'menghapus snapshot VM')]
     public function deleteSnapshot(string $snapName): void
     {
         Gate::authorize('proxmox.vm.snapshot');
@@ -728,6 +743,8 @@ class Table extends Component
 
     public function openLog(int $vmId): void
     {
+        Gate::authorize('proxmox.vm.view');
+
         $vm = ProxmoxVm::find($vmId);
         if (! $vm) {
             $this->toastError('VM tidak ditemukan.');
@@ -798,6 +815,10 @@ class Table extends Component
      */
     protected function exportData(): iterable
     {
+        // Audit keamanan 15 Oktober 2026: export() dapat dipanggil langsung
+        // lewat payload wire, jadi izin lihat diperiksa ulang di sini.
+        Gate::authorize('proxmox.vm.view');
+
         return ProxmoxVm::query()
             ->orderBy('node_name')
             ->orderBy('vmid')

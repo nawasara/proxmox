@@ -4,6 +4,7 @@ namespace Nawasara\Proxmox\Livewire\Ip\Section;
 
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Nawasara\Proxmox\Models\ProxmoxIpAddress;
 use Nawasara\Proxmox\Models\ProxmoxSubnet;
@@ -22,7 +23,13 @@ use Nawasara\Proxmox\Models\ProxmoxUnknownNic;
  */
 class UnknownNics extends Component
 {
-    /** NIC yang sedang diisi. Null berarti form tertutup. */
+    /**
+     * NIC yang sedang diisi. Null berarti form tertutup.
+     *
+     * Audit keamanan 15 Oktober 2026: hanya diisi server lewat edit(),
+     * dikunci terhadap payload wire.
+     */
+    #[Locked]
     public ?int $editingId = null;
 
     public ?string $ip = null;
