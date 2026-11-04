@@ -17,7 +17,7 @@ Proxmox VE management for the Nawasara superapp framework: VM and LXC inventory,
   - Disks listed with the raw config string per device
   - OS type, boot order, description
 - **Snapshot management.** List, create (with optional vmstate / RAM capture for qemu), rollback, and delete; UPID-tracked with an up-to-10-minute timeout.
-- **Console deep link.** Opens the existing PVE web noVNC for the VM in a new tab. Admins authenticate with their own browser session, because API tokens cannot issue cookie-bound vncproxy tickets.
+- **Console.** A full-screen xterm.js tab connected through the nginx relay `/__proxmox-ws/`. QEMU uses its own text console; LXC opens the node shell and types `pct enter <vmid>`, so no container password is needed. Termproxy tickets need a username + password session (API tokens are refused). The websocket auth line must carry the **termproxy** ticket: since PVE 8.4.21 termproxy runs with `--ticket-fd` and rejects the session ticket, which closed every console until v0.7.3. The session ticket only travels inside the websocket URL, where nginx turns it into the handshake cookie.
 - **Cluster overview.** Node summary cards (CPU / RAM / storage totals plus per-node detail); polls every 30s idle, every 4s while a sync is in flight.
 - **Sync info bar** showing the last successful sync time, status counts, and a link to the audit log.
 

@@ -53,7 +53,7 @@ class ConsoleController extends Controller
 
         return response()->view('nawasara-proxmox::console.show', [
             'wsUrl' => $cached['ws_url'],
-            'sessionTicket' => $cached['session_ticket'],
+            'termTicket' => $cached['term_ticket'] ?? '',
             'consoleUser' => $cached['console_user'] ?? 'root@pam',
             'sessionId' => $cached['session_id'] ?? null,
 

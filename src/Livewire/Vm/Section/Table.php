@@ -295,7 +295,10 @@ class Table extends Component
         \Illuminate\Support\Facades\Cache::put('proxmox:console:'.$cacheKey, [
             'user_id' => auth()->id(),
             'ws_url' => $wsUrl,
-            'session_ticket' => $ticket['session_ticket'] ?? '',
+            // Baris autentikasi websocket memakai tiket termproxy (PVE 8.4.21+).
+            // Tiket sesi tetap ikut, tetapi hanya di dalam ws_url sebagai
+            // cookie handshake yang disusun nginx.
+            'term_ticket' => (string) $ticket['ticket'],
             'console_user' => $ticket['console_user'] ?? 'root@pam',
             'session_id' => $logEntry->id,
 

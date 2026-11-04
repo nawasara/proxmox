@@ -5,7 +5,7 @@
 @php
     $cfg = [
         'wsUrl' => $wsUrl,
-        'sessionTicket' => $sessionTicket,
+        'termTicket' => $termTicket,
         'consoleUser' => $consoleUser,
         'vmName' => $vmName,
         'sessionId' => $sessionId,
@@ -215,12 +215,15 @@
                      sehingga split(':')[1] kebetulan benar untuk root@pam dan
                      salah untuk realm lain.
 
-                     ⚠️ Cookie PVEAuthCookie TIDAK terkirim browser: halaman ini
-                     dilayani dari nawasara.ponorogo.go.id sementara websocket
-                     menuju host Proxmox, jadi cookie-nya lintas-domain. Baris
-                     autentikasi inilah satu-satunya cara Proxmox mengenali
-                     sesi di jalur ini. --}}
-                ws.send(cfg.consoleUser + ':' + cfg.sessionTicket + '\n');
+                     ⚠️ Tiketnya tiket TERMPROXY, bukan tiket sesi.
+
+                     Sejak PVE 8.4.21 termproxy berjalan dengan --ticket-fd:
+                     tiket dari POST termproxy dititipkan ke prosesnya, dan
+                     baris ini harus sama persis dengannya. Tiket sesi (yang
+                     diterima sampai 8.4.16) kini dijawab "authentication
+                     request failed" dan soket langsung ditutup, untuk QEMU
+                     maupun LXC. --}}
+                ws.send(cfg.consoleUser + ':' + cfg.termTicket + '\n');
             };
 
             ws.onmessage = (ev) => {
