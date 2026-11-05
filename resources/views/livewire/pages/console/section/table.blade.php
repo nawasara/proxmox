@@ -63,7 +63,7 @@
                 description="Riwayat akan terisi begitu seseorang membuka console sebuah VM." />
         @endif
     @else
-        <x-nawasara-ui::table :headers="['Pengguna', 'VM', 'Mulai', 'Selesai', 'Durasi', 'Status']">
+        <x-nawasara-ui::table :headers="['Pengguna', 'VM', 'Mulai', 'Selesai', 'Durasi']">
             <x-slot:table>
                 @foreach ($sessions as $session)
                     <tr wire:key="session-{{ $session->id }}">
@@ -81,6 +81,18 @@
                             <div class="font-mono text-xs text-neutral-500 dark:text-neutral-400">
                                 {{ $session->node_name }} · {{ $session->vm_type === 'lxc' ? 'LXC' : 'QEMU' }} {{ $session->vmid }}
                             </div>
+                            {{-- Status di bawah nama, bukan kolom sendiri: terlihat tanpa menggulir ke kanan. --}}
+                            <div class="mt-1">
+                                @if ($session->isStale())
+                                    {{-- Dibedakan dari "masih dibuka": tabnya sudah lama tidak
+                                         berdenyut, jadi menyebutnya aktif akan keliru. --}}
+                                    <x-nawasara-ui::badge color="neutral">Terputus</x-nawasara-ui::badge>
+                                @elseif ($session->isOpen())
+                                    <x-nawasara-ui::badge color="success">Dibuka</x-nawasara-ui::badge>
+                                @else
+                                    <x-nawasara-ui::badge color="neutral">Selesai</x-nawasara-ui::badge>
+                                @endif
+                            </div>
                         </td>
                         <td class="px-6 py-4 text-xs text-neutral-500 dark:text-neutral-400">
                             {{ $session->started_at?->setTimezone(config('app.display_timezone', 'Asia/Jakarta'))->translatedFormat('d M Y H:i') }}
@@ -90,17 +102,6 @@
                         </td>
                         <td class="px-6 py-4 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $session->duration_label }}
-                        </td>
-                        <td class="px-6 py-4 text-sm">
-                            @if ($session->isStale())
-                                {{-- Dibedakan dari "masih dibuka": tabnya sudah lama tidak
-                                     berdenyut, jadi menyebutnya aktif akan keliru. --}}
-                                <x-nawasara-ui::badge color="neutral">Terputus</x-nawasara-ui::badge>
-                            @elseif ($session->isOpen())
-                                <x-nawasara-ui::badge color="success">Dibuka</x-nawasara-ui::badge>
-                            @else
-                                <x-nawasara-ui::badge color="neutral">Selesai</x-nawasara-ui::badge>
-                            @endif
                         </td>
                     </tr>
                 @endforeach

@@ -2,6 +2,7 @@
 
 namespace Nawasara\Proxmox\Jobs;
 
+use Nawasara\Proxmox\Services\VmRegistrySync;
 use Nawasara\Proxmox\Models\ProxmoxVm;
 use Nawasara\Proxmox\Services\ProxmoxClient;
 use Nawasara\Sync\Jobs\AbstractSyncJob;
@@ -128,6 +129,17 @@ class SyncProxmoxVmsJob extends AbstractSyncJob
                 ->where('sync_status', '!=', ProxmoxVm::SYNC_PENDING_DELETE)
                 ->where('sync_status', '!=', ProxmoxVm::SYNC_PENDING_CREATE)
                 ->delete();
+        }
+
+        // Mirror into nawasara/registry so VMs get PICs (and show up in Akun
+        // Kisara). A registry failure must not fail the VM sync: the VM data
+        // above is already saved, and the mirror catches up next run.
+        if (VmRegistrySync::available()) {
+            try {
+                $stats['registry'] = app(VmRegistrySync::class)->sync();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[proxmox] sinkron VM ke registry gagal: '.$e->getMessage());
+            }
         }
 
         return $stats;

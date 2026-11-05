@@ -2,6 +2,8 @@
 
 namespace Nawasara\Proxmox\Livewire\Vm\Section;
 
+use Livewire\Attributes\On;
+use Nawasara\Proxmox\Services\VmRegistrySync;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -116,6 +118,59 @@ class Table extends Component
             'type' => $this->typeFilter,
             'template' => $this->templateFilter ?: null,
         ], $this->perPage);
+    }
+
+    /**
+     * Registry assets (PICs) for the VMs on this page, keyed by vmid. One
+     * query for the page, not one per row. Empty when nawasara/registry is
+     * not installed.
+     */
+    #[Computed]
+    public function registryAssets()
+    {
+        if (! VmRegistrySync::available()) {
+            return collect();
+        }
+
+        return \Nawasara\Registry\Models\Asset::query()
+            ->where('package_ref', VmRegistrySync::PACKAGE_REF)
+            ->whereIn('external_id', $this->vms->getCollection()->pluck('vmid')->map(fn ($id) => (string) $id))
+            ->with(['penanggungJawab', 'backupAssignments.user'])
+            ->get()
+            ->keyBy('external_id');
+    }
+
+    /**
+     * Open the registry's OPD & PIC modal for one VM. A VM synced before the
+     * registry mirror existed has no asset yet; mirror first, then open.
+     */
+    public function openPics(int $vmId): void
+    {
+        Gate::authorize('registry.asset.manage');
+
+        $vm = ProxmoxVm::findOrFail($vmId);
+        $find = fn () => \Nawasara\Registry\Models\Asset::where('package_ref', VmRegistrySync::PACKAGE_REF)
+            ->where('external_id', (string) $vm->vmid)->first();
+
+        $asset = $find();
+        if (! $asset) {
+            app(VmRegistrySync::class)->sync();
+            $asset = $find();
+        }
+
+        if (! $asset) {
+            $this->toastError('VM ini belum terdaftar di registry.');
+
+            return;
+        }
+
+        $this->dispatch('asset-pics-open', assetId: $asset->id);
+    }
+
+    #[On('asset-pics-changed')]
+    public function refreshPics(): void
+    {
+        unset($this->registryAssets);
     }
 
     /**

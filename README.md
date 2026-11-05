@@ -157,6 +157,28 @@ The package picks up credentials from Vault automatically.
 
 All permissions are auto-assigned to the `developer` role by the seeder.
 
+## PIC per VM (through nawasara/registry)
+
+Every VM and LXC container is mirrored into nawasara/registry as a
+**Server / VM** asset (`VmRegistrySync`, run at the end of each VM sync), so
+it gets a primary PIC and backup PICs the same way a domain or cPanel account
+does — set from the VM list's **OPD & PIC** menu, which opens the registry's
+own modal. The PICs then see their servers in Akun Kisara (`GET
+/account/servers` in nawasara/asn-portal).
+
+- Keyed by `package_ref = proxmox`, `external_id = vmid` — **not** the
+  proxmox row id. The VM sync hard-deletes and recreates rows for VMs that
+  vanish and come back; the PIC must survive that.
+- A VM that leaves the cluster is marked `inactive`, never deleted, so its
+  PIC history stays. Asset status follows existence, not power: a stopped VM
+  still has an owner.
+- If the sync read no VMs at all, nothing is deactivated — an empty list
+  means the API was unreachable, and deactivating would empty every PIC's
+  Akun Kisara at once.
+- Templates are skipped. Registry is a soft dependency (`class_exists`):
+  without it the column and menu simply do not appear.
+- Identifier is `name (#vmid)`: names repeat across the cluster.
+
 ## Future cross-link with iTop
 
 The `nawasara_proxmox_vms` table reserves an `itop_server_id` column (nullable, indexed). When the `nawasara/itop` integration ships, the sync job will populate this with the matched `ItopServer.id` (where `finalclass = VirtualMachine`) so a single VM can be navigated from either side.

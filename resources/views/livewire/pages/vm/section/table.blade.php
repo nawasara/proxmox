@@ -85,7 +85,7 @@
 
     <x-nawasara-ui::table
         stickyLast
-        :headers="['VMID', 'Name', 'Type', 'Node', 'Status', 'CPU', 'Memory', 'Disk', 'Uptime', '']">
+        :headers="['VMID', 'Name', 'Type', 'Node', 'PIC', 'CPU', 'Memory', 'Disk', 'Uptime', '']">
         <x-slot:table>
             @forelse ($this->vms as $vm)
                 <tr wire:key="vm-{{ $vm->id }}">
@@ -104,6 +104,40 @@
                                 </span>
                             @endif
                         </div>
+                        {{-- Status di bawah nama, bukan kolom sendiri: terlihat tanpa menggulir ke kanan. --}}
+                        <div class="mt-1">
+                            @php $lc = $this->lifecycleJobs[$vm->id] ?? null; @endphp
+                            @if ($lc && in_array($lc->status, ['queued', 'running']))
+                                {{-- In-flight lifecycle action takes priority over the VM's
+                                     cached status — gives operator instant feedback that
+                                     a start/stop/restart is mid-flight. --}}
+                                <x-nawasara-ui::badge color="blue" icon="lucide-loader-circle"
+                                    class="[&_svg]:animate-spin">
+                                    {{ ucfirst(str_replace('vm_', '', $lc->action)) }}…
+                                </x-nawasara-ui::badge>
+                            @elseif ($lc && $lc->status === 'failed' && $lc->finished_at?->gt(now()->subMinutes(5)))
+                                <x-nawasara-ui::badge color="danger" icon="lucide-circle-alert"
+                                    :title="$lc->error">
+                                    {{ ucfirst(str_replace('vm_', '', $lc->action)) }} failed
+                                </x-nawasara-ui::badge>
+                            @elseif ($vm->status === 'running')
+                                {{-- Running: animated dot replaces the icon to convey
+                                     'live, breathing' state more vividly than a static
+                                     check icon would. --}}
+                                <x-nawasara-ui::badge color="success">
+                                    <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot mr-1"></span>
+                                    Running
+                                </x-nawasara-ui::badge>
+                            @elseif ($vm->status === 'stopped')
+                                <x-nawasara-ui::badge color="neutral">Stopped</x-nawasara-ui::badge>
+                            @elseif ($vm->status === 'paused')
+                                <x-nawasara-ui::badge color="warning">Paused</x-nawasara-ui::badge>
+                            @else
+                                <x-nawasara-ui::badge color="neutral">
+                                    {{ ucfirst($vm->status ?? 'unknown') }}
+                                </x-nawasara-ui::badge>
+                            @endif
+                        </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs">
                         @if ($vm->vm_type === 'qemu')
@@ -116,36 +150,18 @@
                         {{ $vm->node_name }}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        @php $lc = $this->lifecycleJobs[$vm->id] ?? null; @endphp
-                        @if ($lc && in_array($lc->status, ['queued', 'running']))
-                            {{-- In-flight lifecycle action takes priority over the VM's
-                                 cached status — gives operator instant feedback that
-                                 a start/stop/restart is mid-flight. --}}
-                            <x-nawasara-ui::badge color="blue" icon="lucide-loader-circle"
-                                class="[&_svg]:animate-spin">
-                                {{ ucfirst(str_replace('vm_', '', $lc->action)) }}…
-                            </x-nawasara-ui::badge>
-                        @elseif ($lc && $lc->status === 'failed' && $lc->finished_at?->gt(now()->subMinutes(5)))
-                            <x-nawasara-ui::badge color="danger" icon="lucide-circle-alert"
-                                :title="$lc->error">
-                                {{ ucfirst(str_replace('vm_', '', $lc->action)) }} failed
-                            </x-nawasara-ui::badge>
-                        @elseif ($vm->status === 'running')
-                            {{-- Running: animated dot replaces the icon to convey
-                                 'live, breathing' state more vividly than a static
-                                 check icon would. --}}
-                            <x-nawasara-ui::badge color="success">
-                                <span class="size-1.5 rounded-full bg-green-500 text-green-500/40 animate-pulse-dot mr-1"></span>
-                                Running
-                            </x-nawasara-ui::badge>
-                        @elseif ($vm->status === 'stopped')
-                            <x-nawasara-ui::badge color="neutral">Stopped</x-nawasara-ui::badge>
-                        @elseif ($vm->status === 'paused')
-                            <x-nawasara-ui::badge color="warning">Paused</x-nawasara-ui::badge>
-                        @else
-                            <x-nawasara-ui::badge color="neutral">
-                                {{ ucfirst($vm->status ?? 'unknown') }}
-                            </x-nawasara-ui::badge>
+                        @php $pic = $this->registryAssets[(string) $vm->vmid] ?? null; @endphp
+                        @if ($pic?->pj_user_id)
+                            <div class="text-gray-800 dark:text-neutral-200">{{ $pic->penanggungJawab?->name ?? 'Pengguna #'.$pic->pj_user_id }}</div>
+                        @endif
+                        @foreach ($pic?->backupAssignments ?? [] as $backup)
+                            <div @class(['flex items-center gap-1.5', 'mt-1.5' => $pic->pj_user_id || ! $loop->first])>
+                                <span class="text-gray-800 dark:text-neutral-200">{{ $backup->user?->name ?? 'Pengguna #'.$backup->user_id }}</span>
+                                <x-nawasara-ui::badge color="neutral">Cadangan</x-nawasara-ui::badge>
+                            </div>
+                        @endforeach
+                        @if (! $pic?->pj_user_id && ($pic?->backupAssignments ?? collect())->isEmpty())
+                            <span class="text-gray-500 dark:text-neutral-400">-</span>
                         @endif
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-600 dark:text-neutral-400 font-mono">
@@ -187,6 +203,10 @@
                             $items = [
                                 ['type' => 'click', 'label' => 'Detail', 'wire:click' => 'openDetail('.$vm->id.')', 'modal' => 'proxmox-vm-detail', 'icon' => 'lucide-eye', 'permission' => 'proxmox.vm.view'],
                             ];
+                            // OPD & PIC lewat modal registry yang sama dengan halaman Aset.
+                            if (\Nawasara\Proxmox\Services\VmRegistrySync::available()) {
+                                $items[] = ['type' => 'click', 'label' => 'OPD & PIC', 'wire:click' => 'openPics('.$vm->id.')', 'icon' => 'lucide-users', 'permission' => 'registry.asset.manage'];
+                            }
                             if (! $vm->template) {
                                 if ($vm->status !== 'running') {
                                     $items[] = ['type' => 'click', 'label' => 'Start', 'wire:click' => "vmAction({$vm->id}, 'start')", 'icon' => 'lucide-play', 'permission' => 'proxmox.vm.lifecycle', 'confirm' => "Start VM {$vm->name} (#{$vm->vmid})?"];
