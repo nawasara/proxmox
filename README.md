@@ -185,6 +185,29 @@ issues the link; `KisaraConsoleController` serves the page.
   Cloudflare tunnel (dashboard-managed). The `/__proxmox-ws/` relay serves it
   unchanged, and the websocket uses the console host itself.
 
+## Console session recordings
+
+Every console session — panel and Akun Kisara — is recorded by the
+`console-recorder` sidecar (`docker/console-recorder` in the app repo), which
+sits between nginx's `/__proxmox-ws/` relay and Proxmox and writes asciicast
+v2 files to `storage/app/console-recordings`. Play them from **Riwayat
+Console → Putar rekaman** (permission `proxmox.console.history`).
+
+- **Output only.** Keystrokes are not recorded: a password typed at a prompt
+  is never echoed, so recording the screen never stores it. The first
+  browser message (`user:ticket`) is not recorded either.
+- **Fail-closed.** The websocket URL carries `rec=<session id>.<HMAC>`,
+  signed with `CONSOLE_RECORDER_SECRET` (same value in the app and the
+  recorder). The recorder refuses any session without a valid mark, so no
+  console can run unrecorded, and nobody can point their session at another
+  session's file. Files are never overwritten (`<id>-<ms>.cast`).
+- **Retention 90 days** (`CONSOLE_RECORDING_RETENTION_DAYS`), pruned daily at
+  03:30 WIB. Session metadata (who, when, how long) is kept.
+- 50 MB cap per session; past it the console keeps working and the
+  recording is marked truncated.
+- Without a recorder (dev), the entrypoint points the relay straight at
+  Proxmox and nothing is recorded.
+
 ## PIC per VM (through nawasara/registry)
 
 Every VM and LXC container is mirrored into nawasara/registry as a

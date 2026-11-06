@@ -33,6 +33,18 @@ Route::middleware(['web', 'auth'])->prefix('nawasara-proxmox')->group(function (
         ->middleware(PermissionMiddleware::using('proxmox.console.history'))
         ->name('nawasara-proxmox.console.history');
 
+    // Rekaman isi sesi console (ditulis console-recorder). Izin yang sama
+    // dengan riwayatnya: siapa boleh melihat siapa membuka console, boleh
+    // melihat apa yang terjadi di dalamnya.
+    Route::get('console-history/{session}/recording', [\Nawasara\Proxmox\Http\Controllers\ConsoleRecordingController::class, 'show'])
+        ->whereNumber('session')
+        ->middleware(PermissionMiddleware::using('proxmox.console.history'))
+        ->name('nawasara-proxmox.console.recording');
+    Route::get('console-history/{session}/recording/{part}.cast', [\Nawasara\Proxmox\Http\Controllers\ConsoleRecordingController::class, 'cast'])
+        ->whereNumber('session')->whereNumber('part')
+        ->middleware(PermissionMiddleware::using('proxmox.console.history'))
+        ->name('nawasara-proxmox.console.recording.cast');
+
     Route::get('console/{ticket}', [ConsoleController::class, 'show'])
         ->middleware(PermissionMiddleware::using('proxmox.vm.console'))
         ->name('nawasara-proxmox.console');

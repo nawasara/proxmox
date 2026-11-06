@@ -342,6 +342,9 @@ class Table extends Component
             'ip_address' => request()->ip(),
         ]);
 
+        // Penanda rekaman: tanpanya perekam (prod) menolak sambungan.
+        $wsUrl = \Nawasara\Proxmox\Support\ConsoleRecording::attach($wsUrl, $logEntry->id);
+
         $cacheKey = bin2hex(random_bytes(16));
 
         // TTL 60 detik: cukup untuk browser membuka tab, jauh dari cukup untuk

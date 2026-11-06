@@ -108,6 +108,9 @@ class KisaraConsole
             'ip_address' => $clientIp,
         ]);
 
+        // Penanda rekaman: tanpanya perekam (prod) menolak sambungan.
+        $wsUrl = \Nawasara\Proxmox\Support\ConsoleRecording::attach($wsUrl, $log->id);
+
         $key = bin2hex(random_bytes(16));
 
         Cache::put(self::CACHE_PREFIX.$key, [

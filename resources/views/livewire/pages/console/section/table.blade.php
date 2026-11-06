@@ -27,14 +27,16 @@
             <div class="flex flex-wrap items-center gap-2 shrink-0">
                 <x-nawasara-ui::filter-panel
                     label="Filter"
-                    :state="['userFilter' => $userFilter, 'statusFilter' => $statusFilter]"
+                    :state="['userFilter' => $userFilter, 'statusFilter' => $statusFilter, 'channelFilter' => $channelFilter]"
                     :multiple="['userFilter']"
-                    :labels="['userFilter' => $this->userOptions, 'statusFilter' => $this->statusOptions]"
-                    :dimensions="['userFilter' => 'Pengguna', 'statusFilter' => 'Status']">
+                    :labels="['userFilter' => $this->userOptions, 'statusFilter' => $this->statusOptions, 'channelFilter' => $this->channelOptions]"
+                    :dimensions="['userFilter' => 'Pengguna', 'statusFilter' => 'Status', 'channelFilter' => 'Jalur']">
                     <x-nawasara-ui::filter-group label="Pengguna" model="userFilter"
                         :items="$this->userOptions" icon="lucide-user" />
                     <x-nawasara-ui::filter-group label="Status" model="statusFilter"
                         :items="$this->statusOptions" icon="lucide-circle-check" />
+                    <x-nawasara-ui::filter-group label="Jalur" model="channelFilter"
+                        :items="$this->channelOptions" icon="lucide-route" />
                 </x-nawasara-ui::filter-panel>
             </div>
 
@@ -75,6 +77,19 @@
                                 @endif
                                 {{ $session->user_email }}
                             </div>
+                            {{-- Jalur dibedakan karena haknya berbeda: panel memakai
+                                 root@pam lewat shell node, Akun Kisara memakai
+                                 kisara-console@pve langsung ke container. --}}
+                            <div class="mt-1">
+                                @if ($session->channel === 'kisara')
+                                    <x-nawasara-ui::badge color="info">Akun Kisara</x-nawasara-ui::badge>
+                                @else
+                                    <x-nawasara-ui::badge color="neutral">Panel</x-nawasara-ui::badge>
+                                @endif
+                                @if ($session->ip_address)
+                                    <span class="ml-1 font-mono text-xs text-neutral-500 dark:text-neutral-400">{{ $session->ip_address }}</span>
+                                @endif
+                            </div>
                         </td>
                         <td class="px-6 py-4 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $session->vm_name }}
@@ -102,6 +117,14 @@
                         </td>
                         <td class="px-6 py-4 text-sm text-neutral-700 dark:text-neutral-200">
                             {{ $session->duration_label }}
+                            @if (\Nawasara\Proxmox\Support\ConsoleRecording::files($session->id))
+                                <div class="mt-1">
+                                    <a href="{{ route('nawasara-proxmox.console.recording', $session->id) }}" target="_blank"
+                                       class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400">
+                                        <x-lucide-play class="size-3" /> Putar rekaman
+                                    </a>
+                                </div>
+                            @endif
                         </td>
                     </tr>
                 @endforeach

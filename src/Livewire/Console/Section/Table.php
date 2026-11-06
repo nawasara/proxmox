@@ -30,6 +30,24 @@ class Table extends Component
     #[Url(except: '')]
     public string $statusFilter = '';
 
+    /** Jalur: `panel` (admin Nawasara) atau `kisara` (PIC lewat Akun Kisara). */
+    #[Url(except: '')]
+    public string $channelFilter = '';
+
+    public function updatedChannelFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    #[Computed]
+    public function channelOptions(): array
+    {
+        return [
+            'panel' => 'Panel Nawasara',
+            'kisara' => 'Akun Kisara',
+        ];
+    }
+
     public function updatedSearch(): void
     {
         $this->resetPage();
@@ -47,7 +65,7 @@ class Table extends Component
 
     public function hasFilter(): bool
     {
-        return $this->search !== '' || $this->userFilter !== [] || $this->statusFilter !== '';
+        return $this->search !== '' || $this->userFilter !== [] || $this->statusFilter !== '' || $this->channelFilter !== '';
     }
 
     /** @return array<string, string> */
@@ -98,6 +116,7 @@ class Table extends Component
                 });
             })
             ->when($this->userFilter, fn ($q) => $q->whereIn('user_name', $this->userFilter))
+            ->when($this->channelFilter !== '', fn ($q) => $q->where('channel', $this->channelFilter))
             ->when($this->statusFilter === 'open', fn ($q) => $q->whereNull('ended_at'))
             ->when($this->statusFilter === 'closed', fn ($q) => $q->whereNotNull('ended_at'))
             ->orderByDesc('started_at')

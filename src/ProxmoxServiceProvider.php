@@ -116,6 +116,14 @@ class ProxmoxServiceProvider extends ServiceProvider
                 ->everyFiveMinutes()
                 ->withoutOverlapping(10);
 
+            // Rekaman console lebih tua dari retention_days (90) dihapus.
+            // Jam dinding, jadi zona waktunya wajib disebut (app.timezone UTC).
+            $schedule->call(fn () => \Nawasara\Proxmox\Support\ConsoleRecording::prune())
+                ->name('nawasara-proxmox:prune-console-recordings')
+                ->dailyAt('03:30')
+                ->timezone('Asia/Jakarta')
+                ->withoutOverlapping(30);
+
             // Pemeriksaan kapasitas — tiap jam, bukan tiap 15 menit.
             //
             // Disk tidak terisi mendadak; yang dibutuhkan adalah tahu beberapa

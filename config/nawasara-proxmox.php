@@ -80,6 +80,18 @@ return [
     //
     // `ticket_ttl`: umur tautan sekali pakai, detik. Cukup untuk peramban
     // membuka tab baru, terlalu pendek untuk dipungut orang lain.
+    // Rekaman isi sesi console (panel dan Akun Kisara), ditulis sidecar
+    // console-recorder. `secret` WAJIB sama dengan milik perekam
+    // (CONSOLE_RECORDER_SECRET di .env); kosong = rekaman mati dan URL console
+    // tidak membawa penanda — di prod, perekam lalu menolak semua console.
+    // `retention_days`: rekaman lebih tua dihapus job harian. Metadata sesi
+    // tetap disimpan.
+    'console_recording' => [
+        'secret' => env('CONSOLE_RECORDER_SECRET', ''),
+        'retention_days' => (int) env('CONSOLE_RECORDING_RETENTION_DAYS', 90),
+        'dir' => storage_path('app/console-recordings'),
+    ],
+
     'kisara_console' => [
         'host' => env('PROXMOX_KISARA_CONSOLE_HOST', 'console.ponorogo.go.id'),
         'ticket_ttl' => (int) env('PROXMOX_KISARA_CONSOLE_TTL', 60),
