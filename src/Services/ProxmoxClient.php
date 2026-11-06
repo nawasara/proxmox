@@ -256,6 +256,21 @@ class ProxmoxClient
         return ! empty(Vault::get('proxmox', 'console_password'));
     }
 
+    /**
+     * Kredensial console untuk Akun Kisara sudah diisi di Vault.
+     *
+     * Akun ini (`kisara-console@pve`) hanya memegang VM.Console di /vms:
+     * dapat membuka console container, ditolak untuk shell node, konfigurasi,
+     * dan aksi daya. Itulah sebabnya console dari Akun Kisara memakainya dan
+     * TIDAK PERNAH memakai `console_user` (root@pam) milik panel — sesi yang
+     * bocor dari internet hanya membuka console, bukan seluruh cluster.
+     */
+    public function hasKisaraConsoleCredentials(): bool
+    {
+        return ! empty(Vault::get('proxmox', 'kisara_console_user'))
+            && ! empty(Vault::get('proxmox', 'kisara_console_password'));
+    }
+
     /** Nama pengguna untuk tiket sesi; root@pam bila tidak diisi. */
     protected function consoleUser(): string
     {
@@ -276,10 +291,10 @@ class ProxmoxClient
      *
      * Mengembalikan { ticket, CSRFPreventionToken, username } atau null.
      */
-    public function createSessionTicket(): ?array
+    public function createSessionTicket(bool $kisara = false): ?array
     {
-        $user = $this->consoleUser();
-        $pass = (string) Vault::get('proxmox', 'console_password');
+        $user = $kisara ? (string) Vault::get('proxmox', 'kisara_console_user') : $this->consoleUser();
+        $pass = (string) Vault::get('proxmox', $kisara ? 'kisara_console_password' : 'console_password');
 
         if ($pass === '') {
             return null;
@@ -317,9 +332,16 @@ class ProxmoxClient
      *
      * Mengembalikan { ticket, port, user, upid } atau null.
      */
-    public function createTermTicket(string $node, ?int $vmid = null, string $type = 'qemu'): ?array
+    public function createTermTicket(string $node, ?int $vmid = null, string $type = 'qemu', bool $kisara = false): ?array
     {
-        $sesi = $this->createSessionTicket();
+        // Akun Kisara hanya boleh console MESIN, tidak pernah shell node —
+        // akunnya pun ditolak Proxmox di sana, tetapi menolaknya di sini lebih
+        // dulu membuat kesalahan pemanggil terlihat sebagai kesalahan, bukan 403.
+        if ($kisara && $vmid === null) {
+            return null;
+        }
+
+        $sesi = $this->createSessionTicket($kisara);
 
         if (! $sesi || empty($sesi['ticket'])) {
             return null;
@@ -366,7 +388,7 @@ class ProxmoxClient
         // Nama pengguna ikut dikirim agar browser tidak perlu memotongnya dari
         // tiket. Bentuk tiket "PVE:root@pam:HEX::TANDA" membuat pemotongan
         // kebetulan benar untuk root@pam dan salah untuk realm lain.
-        $data['console_user'] = $sesi['username'] ?? $this->consoleUser();
+        $data['console_user'] = $sesi['username'] ?? ($kisara ? (string) Vault::get('proxmox', 'kisara_console_user') : $this->consoleUser());
 
         return $data;
     }
@@ -377,7 +399,7 @@ class ProxmoxClient
      * Sama seperti VNC, tetapi menuju vncwebsocket dengan port dari termproxy —
      * Proxmox memakai endpoint websocket yang sama untuk keduanya.
      */
-    public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket, string $sessionTicket = ''): ?string
+    public function termWebSocketUrl(string $node, ?int $vmid, string $type, int $port, string $ticket, string $sessionTicket = '', ?string $host = null): ?string
     {
         $path = $vmid === null
             ? "/api2/json/nodes/{$node}/vncwebsocket"
@@ -425,7 +447,12 @@ class ProxmoxClient
         //
         // nginx menjembatani di /__proxmox-ws/ memakai sertifikat Nawasara
         // yang sah. Alamat Proxmox-nya tidak pernah sampai ke browser.
-        $base = rtrim((string) config('app.url'), '/');
+        //
+        // $host: console Akun Kisara disajikan dari host-nya sendiri
+        // (console.ponorogo.go.id). Websocket diarahkan ke host yang SAMA
+        // dengan halamannya — nginx yang sama melayani keduanya — supaya tidak
+        // bergantung pada aturan lintas-origin.
+        $base = $host ?: rtrim((string) config('app.url'), '/');
         $base = preg_replace('#^https?://#', '', $base);
 
         return "wss://{$base}/__proxmox-ws{$path}?".$params;

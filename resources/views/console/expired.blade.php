@@ -23,7 +23,11 @@
                 bila tab dimuat ulang, atau bila jeda antara menekan tombol dan
                 halaman terbuka terlalu lama.
             </p>
-            <p>Buka console lagi dari daftar VM di Nawasara.</p>
+            @if (! empty($kisara))
+                <p>Buka console lagi dari Akun Kisara, menu Layanan, bagian Server / VM.</p>
+            @else
+                <p>Buka console lagi dari daftar VM di Nawasara.</p>
+            @endif
             <p class="kecil">
                 Sekali pakai dengan sengaja: tautan yang sudah dipakai tidak
                 dapat diputar ulang oleh siapa pun yang menemukannya di riwayat

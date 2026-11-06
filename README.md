@@ -157,6 +157,34 @@ The package picks up credentials from Vault automatically.
 
 All permissions are auto-assigned to the `developer` role by the seeder.
 
+## Container console for PICs (Akun Kisara)
+
+A container's PIC can open its console from Akun Kisara, on its own host
+(`console.ponorogo.go.id`, config `kisara_console.host`). `KisaraConsole`
+issues the link; `KisaraConsoleController` serves the page.
+
+- **Proxmox account `kisara-console@pve`, never root@pam.** Role
+  `KisaraConsole` holds only `VM.Console` on `/vms`: it opens container
+  consoles and is refused the node shell (403), configs (403) and power
+  actions. Credentials live in Vault (`proxmox.kisara_console_*`). A ticket
+  leaked from the internet opens one console, not the cluster.
+- **Straight to the container (`/lxc/{vmid}/termproxy`), no `pct enter`.**
+  Every LXC is set `cmode=shell`, so the console is a root shell inside the
+  container with no login. ⚠️ A `cmode` change on a running container is
+  PENDING until it restarts — until then the console shows `login:`. Read
+  config with `current=1` to see what is actually in force.
+- **No panel session on that page.** Who may open it is decided by
+  nawasara/asn-portal (active PIC in the registry + a recent sign-in). The
+  link is single-use (`ticket_ttl`, 60 s) and bound to the requester's IP
+  when the portal forwards it; heartbeat/close are accepted only from the
+  browser session that opened the page.
+- LXC only: QEMU has no `cmode`, and its console asks for a login.
+- Sessions are logged in `nawasara_proxmox_console_sessions` with
+  `channel = kisara`, separate from panel sessions (`panel`).
+- The host must reach Nawasara's nginx: add it as a public hostname on the
+  Cloudflare tunnel (dashboard-managed). The `/__proxmox-ws/` relay serves it
+  unchanged, and the websocket uses the console host itself.
+
 ## PIC per VM (through nawasara/registry)
 
 Every VM and LXC container is mirrored into nawasara/registry as a

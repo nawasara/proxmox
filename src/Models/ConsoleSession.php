@@ -20,6 +20,7 @@ class ConsoleSession extends Model
         'user_name',
         'user_email',
         'user_nip',
+        'channel',
         'node_name',
         'vmid',
         'vm_name',

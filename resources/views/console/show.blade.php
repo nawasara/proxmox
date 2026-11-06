@@ -14,8 +14,11 @@
         // disetel akses otomatis, dan consolenya meminta login seperti biasa.
         // Perintah masuk ke container, dijalankan di shell node.
         'enterCommand' => $enterCommand,
-        'heartbeatUrl' => $sessionId ? route('nawasara-proxmox.console.heartbeat', $sessionId) : null,
-        'closeUrl' => $sessionId ? route('nawasara-proxmox.console.close', $sessionId) : null,
+        // Console Akun Kisara mengirim URL-nya sendiri: halamannya berada di
+        // host console, tanpa sesi panel, sehingga rute panel di bawah tidak
+        // dapat dipakai di sana.
+        'heartbeatUrl' => $heartbeatUrl ?? ($sessionId ? route('nawasara-proxmox.console.heartbeat', $sessionId) : null),
+        'closeUrl' => $closeUrl ?? ($sessionId ? route('nawasara-proxmox.console.close', $sessionId) : null),
         'csrf' => csrf_token(),
     ];
 @endphp
@@ -85,7 +88,7 @@
                  ini yang mengingatkan bahwa perbuatan di sini tetap tercatat
                  atas nama seseorang. --}}
             <span class="pengguna" id="pengguna">
-                {{ auth()->user()->name }}
+                {{ $userName ?? auth()->user()?->name }}
                 @if (! empty($userNip))
                     <span class="nip">NIP {{ $userNip }}</span>
                 @endif

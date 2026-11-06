@@ -48,3 +48,24 @@ Route::middleware(['web', 'auth'])->prefix('nawasara-proxmox')->group(function (
         ->middleware(PermissionMiddleware::using('proxmox.vm.console'))
         ->name('nawasara-proxmox.console.close');
 });
+
+// Console container untuk PIC dari Akun Kisara, di host console sendiri.
+// TANPA 'auth': PIC tidak punya akun panel. Pengamannya ada di
+// KisaraConsoleController (tautan sekali pakai, IP, sesi peramban).
+// Host kosong = fitur mati, tidak ada rute yang didaftarkan.
+if (($kisaraConsoleHost = trim((string) config('nawasara-proxmox.kisara_console.host', ''))) !== '') {
+    Route::middleware(['web'])->domain($kisaraConsoleHost)->group(function () {
+        Route::get('c/{ticket}', [\Nawasara\Proxmox\Http\Controllers\KisaraConsoleController::class, 'show'])
+            ->where('ticket', '[a-f0-9]{32}')
+            ->middleware('throttle:30,1')
+            ->name('nawasara-proxmox.kisara-console.show');
+
+        Route::post('c/sessions/{sessionId}/heartbeat', [\Nawasara\Proxmox\Http\Controllers\KisaraConsoleController::class, 'heartbeat'])
+            ->whereNumber('sessionId')
+            ->name('nawasara-proxmox.kisara-console.heartbeat');
+
+        Route::post('c/sessions/{sessionId}/close', [\Nawasara\Proxmox\Http\Controllers\KisaraConsoleController::class, 'close'])
+            ->whereNumber('sessionId')
+            ->name('nawasara-proxmox.kisara-console.close');
+    });
+}

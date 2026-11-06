@@ -71,6 +71,20 @@ return [
 
     'request_timeout' => env('PROXMOX_REQUEST_TIMEOUT', 15), // seconds
 
+    // Console container dari Akun Kisara (ASN yang menjadi PIC container).
+    //
+    // `host`: halaman console disajikan dari host ini, terpisah dari panel,
+    // dan websocket-nya diarahkan ke host yang sama. Host harus diarahkan ke
+    // nginx Nawasara (hostname publik di tunnel Cloudflare). Kosongkan untuk
+    // mematikan console dari Akun Kisara sama sekali.
+    //
+    // `ticket_ttl`: umur tautan sekali pakai, detik. Cukup untuk peramban
+    // membuka tab baru, terlalu pendek untuk dipungut orang lain.
+    'kisara_console' => [
+        'host' => env('PROXMOX_KISARA_CONSOLE_HOST', 'console.ponorogo.go.id'),
+        'ticket_ttl' => (int) env('PROXMOX_KISARA_CONSOLE_TTL', 60),
+    ],
+
     // Scheduler — registers proxmox:sync (nodes + VMs) on the Laravel
     // schedule, every `sync_interval` minutes. Set PROXMOX_SCHEDULER_ENABLED
     // false to skip registration, e.g. when the deployment has no Proxmox
